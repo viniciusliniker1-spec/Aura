@@ -100,6 +100,16 @@ Deno.serve(handle(async (b) => {
       return json({ ok: true });
     }
 
+    case 'chat_clear': {
+      // Limpa o chat principal. Exige `since` (ISO) ou all:true para nunca apagar tudo por engano.
+      if (!b.since && b.all !== true) return json({ error: 'informe since ou all:true' }, 400);
+      let q = db.from('messages').delete().is('project_id', null);
+      if (b.since) q = q.gte('created_at', String(b.since));
+      const { data, error } = await q.select('id');
+      if (error) throw error;
+      return json({ ok: true, deleted: data?.length ?? 0 });
+    }
+
     case 'setting_set': {
       if (!['cv_base_text'].includes(b.key)) return json({ error: 'chave não permitida' }, 400);
       const { error } = await db.from('app_settings').upsert({ key: b.key, value: b.value, updated_at: new Date().toISOString() });
