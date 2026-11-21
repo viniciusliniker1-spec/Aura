@@ -17,6 +17,8 @@ export const lastFunctionError = { message: '' };
 
 /** Traduz o erro técnico numa dica do que conferir. */
 export function explainError(msg: string): string {
+  if (/503|UNAVAILABLE|high demand|overload|sobrecarreg|sem resposta/i.test(msg))
+    return `${msg}\n\nO Gemini está sobrecarregado neste momento (é temporário, do lado do Google). Tente enviar de novo em alguns instantes.`;
   if (/model|404|not found/i.test(msg) && /gemini/i.test(msg))
     return `${msg}\n\nO modelo do Gemini pode ter mudado. Defina o secret GEMINI_MODEL no GitHub com um modelo atual (veja aistudio.google.com/docs/models) e rode "Deploy Supabase".`;
   if (/api key|API_KEY|generativelanguage|gemini/i.test(msg))

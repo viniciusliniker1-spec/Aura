@@ -64,19 +64,28 @@ export async function generate({ system, contents, schema }: GenOpts): Promise<s
 
   const errors: string[] = [];
   for (const model of GEN_MODELS()) {
-    let res = await call(model, cfgFast);
+    let res: Response;
+    try { res = await call(model, cfgFast); }
+    catch (e) { errors.push(`${model} → sem resposta (${e instanceof Error ? e.name : 'erro'})`); continue; }
     let txt = '';
+    // Resume o corpo de erro do Google numa frase curta (em vez de despejar o JSON inteiro).
+    const brief = async (r: Response) => {
+      const raw = await r.text();
+      try { return String(JSON.parse(raw)?.error?.message ?? raw).replace(/\s+/g, ' ').slice(0, 200); } catch { return raw.slice(0, 200); }
+    };
     if (!res.ok) {
-      txt = (await res.text()).slice(0, 220);
-      if (res.status === 400 && /thinking/i.test(txt)) { res = await call(model, cfgPlain); txt = res.ok ? '' : (await res.text()).slice(0, 220); }
+      txt = await brief(res);
+      if (res.status === 400 && /thinking/i.test(txt)) { res = await call(model, cfgPlain); txt = res.ok ? '' : await brief(res); }
     }
     if (res.ok) {
       const j = await res.json();
       return j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') ?? '';
     }
     errors.push(`${model} → ${res.status}: ${txt}`);
-    // Só troca de modelo quando o problema é o modelo (inexistente/sem acesso). Chave inválida ou cota não adiantam.
-    const modelProblem = res.status === 404 || (res.status === 400 && /model/i.test(txt)) || (res.status === 403 && /model|not.*(allowed|available)|access/i.test(txt));
+    // Troca de modelo quando o problema é do modelo: inexistente, sem acesso ou sobrecarregado/indisponível
+    // (503/500/429). Chave inválida não adianta trocar: para na hora.
+    const modelProblem = res.status === 404 || [429, 500, 502, 503, 504].includes(res.status)
+      || (res.status === 400 && /model/i.test(txt)) || (res.status === 403 && /model|not.*(allowed|available)|access/i.test(txt));
     if (!modelProblem) break;
   }
   throw new Error(`Gemini falhou. ${errors.join(' | ')}`);
