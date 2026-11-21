@@ -59,6 +59,7 @@ export interface ChatResult {
   reply: string;
   memorySaved?: string;
   memoryId?: string;
+  timing?: { ctx: number; llm: number; model: string };
   handoff?: { url: string; task: string; fileName?: string | null };
   panel?: GeneratedPanelSpec;
   cvRequest?: { role: string; format: 'pdf' | 'docx' };

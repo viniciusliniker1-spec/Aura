@@ -43,52 +43,96 @@ export interface GenOpts {
   schema?: Record<string, unknown>;
 }
 
+/** Diagnóstico da última geração (modelo usado e tempo), devolvido ao app. */
+export const lastCall = { model: '', ms: 0 };
+
+// A função precisa responder ANTES do limite da plataforma (um corte da plataforma chega ao app como
+// "Failed to send a request"). Prazo total + prazo por tentativa + "hedge": se o modelo não respondeu em
+// HEDGE_MS, dispara o próximo em paralelo e fica com quem responder primeiro.
+const TOTAL_BUDGET_MS = 40_000;
+const PER_CALL_MS = 20_000;
+const HEDGE_MS = 6_000;
+
+type Attempt = { ok: true; text: string } | { ok: false; msg: string; modelProblem: boolean };
+
 export async function generate({ system, contents, schema }: GenOpts): Promise<string> {
   const k = key();
-  const base = {
-    ...(system ? { system_instruction: { parts: [{ text: system }] } } : {}),
-    contents
+  const started = Date.now();
+  const base = { ...(system ? { system_instruction: { parts: [{ text: system }] } } : {}), contents };
+  // Velocidade: sem "pensamento" interno e resposta limitada. Se o modelo rejeitar o parâmetro de pensamento,
+  // repete a chamada sem ele.
+  const out = schema ? { responseMimeType: 'application/json', responseSchema: schema } : {};
+  const cfgFast = { ...out, thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 2048 };
+  const cfgPlain = { ...out, maxOutputTokens: 2048 };
+
+  const brief = async (r: Response) => {
+    const raw = await r.text();
+    try { return String(JSON.parse(raw)?.error?.message ?? raw).replace(/\s+/g, ' ').slice(0, 200); } catch { return raw.slice(0, 200); }
   };
-  // Velocidade: sem "pensamento" interno (thinkingBudget 0) e resposta limitada. Se o modelo rejeitar o
-  // parâmetro de pensamento, repete a chamada sem ele.
-  const cfgFast = { ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}), thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 2048 };
-  const cfgPlain = { ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}), maxOutputTokens: 2048 };
 
-  const call = (model: string, cfg: Record<string, unknown>) =>
-    fetch(`${BASE}/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
-      body: JSON.stringify({ ...base, generationConfig: cfg }),
-      signal: AbortSignal.timeout(30000)
+  const attempt = async (model: string, abort: AbortSignal): Promise<Attempt> => {
+    const signal = AbortSignal.any([abort, AbortSignal.timeout(PER_CALL_MS)]);
+    const call = (cfg: Record<string, unknown>) => fetch(`${BASE}/v1beta/models/${model}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
+      body: JSON.stringify({ ...base, generationConfig: cfg }), signal
     });
+    try {
+      let res = await call(cfgFast);
+      let txt = '';
+      if (!res.ok) {
+        txt = await brief(res);
+        if (res.status === 400 && /thinking/i.test(txt)) { res = await call(cfgPlain); txt = res.ok ? '' : await brief(res); }
+      }
+      if (res.ok) {
+        const j = await res.json();
+        return { ok: true, text: j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') ?? '' };
+      }
+      // Problema do modelo (inexistente, sem acesso, sobrecarregado): vale tentar outro. Chave inválida: não.
+      const modelProblem = res.status === 404 || [429, 500, 502, 503, 504].includes(res.status)
+        || (res.status === 400 && /model/i.test(txt)) || (res.status === 403 && /model|not.*(allowed|available)|access/i.test(txt));
+      return { ok: false, msg: `${model} → ${res.status}: ${txt}`, modelProblem };
+    } catch (e) {
+      return { ok: false, msg: `${model} → sem resposta (${e instanceof Error ? e.name : 'erro'})`, modelProblem: true };
+    }
+  };
 
-  const errors: string[] = [];
-  for (const model of GEN_MODELS()) {
-    let res: Response;
-    try { res = await call(model, cfgFast); }
-    catch (e) { errors.push(`${model} → sem resposta (${e instanceof Error ? e.name : 'erro'})`); continue; }
-    let txt = '';
-    // Resume o corpo de erro do Google numa frase curta (em vez de despejar o JSON inteiro).
-    const brief = async (r: Response) => {
-      const raw = await r.text();
-      try { return String(JSON.parse(raw)?.error?.message ?? raw).replace(/\s+/g, ' ').slice(0, 200); } catch { return raw.slice(0, 200); }
+  const models = GEN_MODELS();
+  return await new Promise<string>((resolve, reject) => {
+    const controllers: AbortController[] = [];
+    const errors: string[] = [];
+    let next = 0, pending = 0, done = false;
+    let hedge: ReturnType<typeof setInterval> | undefined, total: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (fn: () => void) => {
+      if (done) return;
+      done = true;
+      clearInterval(hedge); clearTimeout(total);
+      controllers.forEach((c) => c.abort());
+      fn();
     };
-    if (!res.ok) {
-      txt = await brief(res);
-      if (res.status === 400 && /thinking/i.test(txt)) { res = await call(model, cfgPlain); txt = res.ok ? '' : await brief(res); }
-    }
-    if (res.ok) {
-      const j = await res.json();
-      return j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') ?? '';
-    }
-    errors.push(`${model} → ${res.status}: ${txt}`);
-    // Troca de modelo quando o problema é do modelo: inexistente, sem acesso ou sobrecarregado/indisponível
-    // (503/500/429). Chave inválida não adianta trocar: para na hora.
-    const modelProblem = res.status === 404 || [429, 500, 502, 503, 504].includes(res.status)
-      || (res.status === 400 && /model/i.test(txt)) || (res.status === 403 && /model|not.*(allowed|available)|access/i.test(txt));
-    if (!modelProblem) break;
-  }
-  throw new Error(`Gemini falhou. ${errors.join(' | ')}`);
+    const launch = (): boolean => {
+      if (done || next >= models.length) return false;
+      const model = models[next++];
+      const ac = new AbortController();
+      controllers.push(ac);
+      pending++;
+      attempt(model, ac.signal).then((r) => {
+        pending--;
+        if (done) return;
+        if (r.ok) {
+          lastCall.model = model; lastCall.ms = Date.now() - started;
+          return finish(() => resolve(r.text));
+        }
+        errors.push(r.msg);
+        if (!r.modelProblem) return finish(() => reject(new Error(`Gemini falhou. ${errors.join(' | ')}`)));
+        if (!launch() && pending === 0) finish(() => reject(new Error(`Gemini falhou. ${errors.join(' | ')}`)));
+      });
+      return true;
+    };
+    hedge = setInterval(() => { launch(); }, HEDGE_MS);
+    total = setTimeout(() => finish(() => reject(new Error(`Gemini falhou (tempo esgotado). ${errors.join(' | ') || 'sem resposta de nenhum modelo'}`))), TOTAL_BUDGET_MS);
+    launch();
+  });
 }
 
 export async function generateJSON<T>(opts: GenOpts): Promise<T> {

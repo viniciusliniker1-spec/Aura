@@ -19,7 +19,7 @@ export interface ProactiveCard {
 }
 
 export type ChatItem =
-  | { id: string; role: 'user' | 'assistant'; text: string }
+  | { id: string; role: 'user' | 'assistant'; text: string; meta?: string }
   | { id: string; role: 'handoff_card'; title: string; domain: string; task: string; file?: string | null }
   | { id: string; role: 'divider'; text: string };
 

@@ -120,7 +120,14 @@ export const ChatView: React.FC = () => {
           if (m.role === 'user') {
             return <div key={m.id} className="flex justify-end animate-in"><div className="max-w-[82%] px-4 py-3 rounded-[24px] rounded-tr-md bg-[#F2F3F5] text-[#181A20] text-[14px] leading-relaxed shadow-md whitespace-pre-wrap">{m.text}</div></div>;
           }
-          return <div key={m.id} className="flex justify-start animate-in"><div className="max-w-[86%] px-4 py-3.5 rounded-[24px] rounded-tl-md glass-card text-[14px] leading-relaxed text-white/95 shadow-lg whitespace-pre-wrap">{m.text}</div></div>;
+          return (
+            <div key={m.id} className="flex justify-start animate-in">
+              <div className="max-w-[86%] px-4 py-3.5 rounded-[24px] rounded-tl-md glass-card text-[14px] leading-relaxed text-white/95 shadow-lg whitespace-pre-wrap">
+                {m.text}
+                {m.meta && <span className="block mt-1.5 text-[10px] text-white/35">{m.meta}</span>}
+              </div>
+            </div>
+          );
         })}
         {sending && <div className="flex justify-start"><div className="px-4 py-3 rounded-[24px] rounded-tl-md glass-card text-white/70 text-sm">…</div></div>}
         <div ref={endRef} />

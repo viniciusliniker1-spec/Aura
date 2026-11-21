@@ -472,7 +472,11 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /* ----------------------------------- Chat ----------------------------------- */
   const handleChatResult = useCallback(async (res: api.ChatResult, items: ChatItem[]) => {
-    items.push({ id: uuid(), role: 'assistant', text: res.reply });
+    const t = res.timing;
+    items.push({
+      id: uuid(), role: 'assistant', text: res.reply,
+      meta: t ? `${((t.ctx + t.llm) / 1000).toFixed(1)}s · ${t.model || 'IA'}` : undefined
+    });
     if (res.memorySaved) {
       setMemories((p) => [{ id: res.memoryId ?? uuid(), tag: 'IA', text: res.memorySaved! }, ...p]);
       // No modo remoto a função aura-chat já gravou a memória (com embedding).

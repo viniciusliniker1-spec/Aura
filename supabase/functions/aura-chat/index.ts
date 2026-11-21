@@ -1,5 +1,5 @@
 import { admin, handle, json } from '../_shared/common.ts';
-import { embed, generateJSON, mintLiveToken } from '../_shared/gemini.ts';
+import { embed, generateJSON, mintLiveToken, lastCall } from '../_shared/gemini.ts';
 
 const PANEL_SCHEMA = {
   type: 'OBJECT',
@@ -138,6 +138,7 @@ Se mensagens anteriores trouxerem resultados do navegador, use-os para responder
   const rt = (globalThis as any).EdgeRuntime;
   if (rt?.waitUntil) rt.waitUntil(save); else await save;
 
+  result.timing = { ctx: tCtx, llm: Date.now() - t1, model: lastCall.model };
   console.log(`aura-chat: contexto ${tCtx}ms, LLM ${Date.now() - t1}ms, total ${Date.now() - t0}ms`);
   return json(result);
 }));

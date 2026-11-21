@@ -17,6 +17,8 @@ export const lastFunctionError = { message: '' };
 
 /** Traduz o erro técnico numa dica do que conferir. */
 export function explainError(msg: string): string {
+  if (/failed to send|failed to fetch|network|load failed|abort/i.test(msg))
+    return `${msg}\n\nA conexão com o servidor caiu ou a resposta demorou demais. Confira sua internet e tente de novo. Se repetir, me avise.`;
   if (/429|quota|RESOURCE_EXHAUSTED|exhausted|billing|rate.?limit/i.test(msg))
     return `${msg}\n\nLimite de uso (cota) do Gemini atingido. Confira o plano e o uso da chave em aistudio.google.com (API keys) e tente de novo mais tarde ou ative o faturamento.`;
   if (/503|UNAVAILABLE|high demand|overload|sobrecarreg|sem resposta/i.test(msg))
