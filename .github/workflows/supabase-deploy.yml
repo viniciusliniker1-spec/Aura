@@ -22,7 +22,7 @@ jobs:
         run: supabase link --project-ref "$PROJECT_REF"
 
       - name: Criar tabelas (migrations)
-        run: supabase db push
+        run: supabase db push --remote --yes
 
       - name: Gravar secrets das funções (só os preenchidos)
         env:
