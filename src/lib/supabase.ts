@@ -25,8 +25,10 @@ export function explainError(msg: string): string {
     return `${msg}\n\nO Gemini está sobrecarregado neste momento (é temporário, do lado do Google). Tente enviar de novo em alguns instantes.`;
   if (/model|404|not found/i.test(msg) && /gemini/i.test(msg))
     return `${msg}\n\nO modelo do Gemini pode ter mudado. Defina o secret GEMINI_MODEL no GitHub com um modelo atual (veja aistudio.google.com/docs/models) e rode "Deploy Supabase".`;
-  if (/api key|API_KEY|generativelanguage|gemini/i.test(msg))
-    return `${msg}\n\nConfira o secret GEMINI_API_KEY no GitHub e rode o workflow "Deploy Supabase" de novo.`;
+  if (/api key|API_KEY|unauthenticated|permission denied/i.test(msg))
+    return `${msg}\n\nParece problema da chave. Confira o secret GEMINI_API_KEY no GitHub e rode o workflow "Deploy Supabase" de novo.`;
+  if (/gemini/i.test(msg))
+    return `${msg}\n\nAbra Menu → Diagnóstico da IA e me mande o resultado.`;
   if (/acesso negado|401|403/i.test(msg))
     return `${msg}\n\nO VITE_AURA_ACCESS_TOKEN do app precisa ser igual ao secret AURA_ACCESS_TOKEN.`;
   return msg || 'Sem resposta do servidor. Veja os logs em Supabase → Edge Functions.';

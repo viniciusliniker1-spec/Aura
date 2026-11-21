@@ -3,6 +3,9 @@ import { ArrowLeft, Upload, ExternalLink, Trash2 } from 'lucide-react';
 import { useAura } from '../state/AuraContext';
 import { openExternal } from '../lib/native';
 import { uuid } from '../lib/api';
+import * as api from '../lib/api';
+import type { DiagResult, Probe } from '../lib/api';
+import { lastFunctionError } from '../lib/supabase';
 import type {
   PanelItem, RoutineState, ExpensesState, PomodoroState, ChecklistState
 } from '../types/aura';
@@ -341,6 +344,52 @@ const AutonomyView: React.FC = () => {
   );
 };
 
+/* ============================== DIAGNÓSTICO ============================== */
+const DiagnosticsView: React.FC = () => {
+  const { remote } = useAura();
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<DiagResult | null>(null);
+  const [err, setErr] = useState('');
+  const cell = (p: Probe) => (
+    <span className={p.status === 200 ? 'text-emerald-300' : 'text-red-300'}>
+      {p.status === 200 ? `OK ${(p.ms / 1000).toFixed(1)}s` : `${p.status || '—'} ${p.msg ? '· ' + p.msg.slice(0, 70) : ''}`}
+    </span>
+  );
+  return (
+    <div className="glass-card rounded-[28px] p-5 space-y-3">
+      <h3 className="font-serif text-2xl text-white">diagnóstico da IA</h3>
+      {!remote ? <p className="text-xs text-amber-300">Modo local: sem backend para testar.</p> : (
+        <>
+          <p className="text-xs text-white/70">Testa cada modelo do Gemini com a sua chave (leva até ~20 s) e mostra o que funciona.</p>
+          <button type="button" disabled={busy} className={`w-full py-2.5 ${btnLight} disabled:opacity-60`}
+            onClick={async () => { setBusy(true); setErr(''); setRes(null); const r = await api.chat.diagnose(); if (r) setRes(r); else setErr(lastFunctionError.message || 'Sem resposta do servidor'); setBusy(false); }}>
+            {busy ? 'Testando…' : 'Rodar diagnóstico'}
+          </button>
+        </>
+      )}
+      {err && <p className="text-xs text-red-300 whitespace-pre-wrap">{err}</p>}
+      {res && (
+        <div className="space-y-2 text-[11px] leading-snug">
+          {res.tests.map((t) => (
+            <div key={t.model} className="glass-tile rounded-2xl p-3 space-y-0.5">
+              <p className="text-white font-medium text-xs">{t.model}</p>
+              <p className="text-white/60">rápida: {cell(t.fast)}</p>
+              <p className="text-white/60">simples: {cell(t.plain)}</p>
+              <p className="text-white/60">JSON: {cell(t.json)}</p>
+            </div>
+          ))}
+          <div className="glass-tile rounded-2xl p-3 space-y-0.5">
+            <p className="text-white font-medium text-xs">embedding (memória)</p>
+            <p className={res.embed.ok ? 'text-emerald-300' : 'text-red-300'}>{res.embed.ok ? `OK · ${res.embed.dims} dims · ${(res.embed.ms / 1000).toFixed(1)}s` : 'falhou'}</p>
+            <p className="text-white/60 pt-1">GEMINI_MODEL: {res.configuredModel ?? '(não definido)'}</p>
+            <p className="text-white/60">Modelos da sua chave: {res.available.length ? res.available.join(', ') : '(lista indisponível)'}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const SubviewHost: React.FC = () => {
   const { subview, closeSubview } = useAura();
   return (
@@ -355,6 +404,7 @@ export const SubviewHost: React.FC = () => {
         {subview === 'panels' && <PanelsView />}
         {subview === 'memory' && <MemoryView />}
         {subview === 'autonomy' && <AutonomyView />}
+        {subview === 'diagnostics' && <DiagnosticsView />}
       </div>
     </section>
   );

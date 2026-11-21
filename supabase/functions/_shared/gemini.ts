@@ -53,7 +53,7 @@ const TOTAL_BUDGET_MS = 40_000;
 const PER_CALL_MS = 20_000;
 const HEDGE_MS = 6_000;
 
-type Attempt = { ok: true; text: string } | { ok: false; msg: string; modelProblem: boolean };
+type Attempt = { ok: true; text: string } | { ok: false; msg: string; fatal: boolean };
 
 export async function generate({ system, contents, schema }: GenOpts): Promise<string> {
   const k = key();
@@ -81,18 +81,19 @@ export async function generate({ system, contents, schema }: GenOpts): Promise<s
       let txt = '';
       if (!res.ok) {
         txt = await brief(res);
-        if (res.status === 400 && /thinking/i.test(txt)) { res = await call(cfgPlain); txt = res.ok ? '' : await brief(res); }
+        // Qualquer 400 na config "rápida" (ex.: modelo que não aceita thinkingConfig): repete sem ela.
+        if (res.status === 400) { res = await call(cfgPlain); txt = res.ok ? '' : await brief(res); }
       }
       if (res.ok) {
         const j = await res.json();
         return { ok: true, text: j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') ?? '' };
       }
-      // Problema do modelo (inexistente, sem acesso, sobrecarregado): vale tentar outro. Chave inválida: não.
-      const modelProblem = res.status === 404 || [429, 500, 502, 503, 504].includes(res.status)
-        || (res.status === 400 && /model/i.test(txt)) || (res.status === 403 && /model|not.*(allowed|available)|access/i.test(txt));
-      return { ok: false, msg: `${model} → ${res.status}: ${txt}`, modelProblem };
+      // Só problema de CHAVE é fatal (trocar de modelo não resolve). Qualquer outro erro (modelo inexistente,
+      // sobrecarregado, argumento não suportado por ESTE modelo...) deixa os demais modelos seguirem.
+      const fatal = res.status === 401 || ([400, 403].includes(res.status) && /api key|API_KEY|unauthenticated|permission denied/i.test(txt));
+      return { ok: false, msg: `${model} → ${res.status}: ${txt}`, fatal };
     } catch (e) {
-      return { ok: false, msg: `${model} → sem resposta (${e instanceof Error ? e.name : 'erro'})`, modelProblem: true };
+      return { ok: false, msg: `${model} → sem resposta (${e instanceof Error ? e.name : 'erro'})`, fatal: false };
     }
   };
 
@@ -124,7 +125,7 @@ export async function generate({ system, contents, schema }: GenOpts): Promise<s
           return finish(() => resolve(r.text));
         }
         errors.push(r.msg);
-        if (!r.modelProblem) return finish(() => reject(new Error(`Gemini falhou. ${errors.join(' | ')}`)));
+        if (r.fatal) return finish(() => reject(new Error(`Gemini falhou. ${errors.join(' | ')}`)));
         if (!launch() && pending === 0) finish(() => reject(new Error(`Gemini falhou. ${errors.join(' | ')}`)));
       });
       return true;
@@ -160,4 +161,50 @@ export async function mintLiveToken(): Promise<string | null> {
     console.warn('live token indisponível', e);
     return null;
   }
+}
+
+
+/** Diagnóstico: testa cada modelo (config rápida, simples e com JSON) + embedding + lista de modelos da chave. */
+export async function diagnose() {
+  const k = key();
+  const headers = { 'Content-Type': 'application/json', 'x-goog-api-key': k };
+  const brief = async (r: Response) => {
+    const raw = await r.text();
+    try { return String(JSON.parse(raw)?.error?.message ?? raw).replace(/\s+/g, ' ').slice(0, 160); } catch { return raw.slice(0, 160); }
+  };
+  const probe = async (url: string, init: RequestInit) => {
+    const t = Date.now();
+    try {
+      const r = await fetch(url, { ...init, signal: AbortSignal.timeout(20000) });
+      return { status: r.status, ms: Date.now() - t, msg: r.ok ? '' : await brief(r) };
+    } catch (e) {
+      return { status: 0, ms: Date.now() - t, msg: e instanceof Error ? e.name : 'erro' };
+    }
+  };
+  const body = (cfg: Record<string, unknown>) => JSON.stringify({
+    contents: [{ role: 'user', parts: [{ text: 'Responda apenas: oi' }] }], generationConfig: { maxOutputTokens: 256, ...cfg }
+  });
+  const schema = { type: 'OBJECT', properties: { reply: { type: 'STRING' } }, required: ['reply'] };
+
+  const list = await probe(`${BASE}/v1beta/models?pageSize=200`, { headers });
+  let available: string[] = [];
+  try {
+    const r = await fetch(`${BASE}/v1beta/models?pageSize=200`, { headers, signal: AbortSignal.timeout(15000) });
+    const j = await r.json();
+    available = (j?.models ?? []).map((m: any) => String(m.name).replace('models/', '')).filter((n: string) => /flash|live|embedding/.test(n)).slice(0, 40);
+  } catch { /* lista indisponível */ }
+
+  const tests = await Promise.all(GEN_MODELS().map(async (model) => {
+    const url = `${BASE}/v1beta/models/${model}:generateContent`;
+    const [fast, plain, json] = await Promise.all([
+      probe(url, { method: 'POST', headers, body: body({ thinkingConfig: { thinkingBudget: 0 } }) }),
+      probe(url, { method: 'POST', headers, body: body({}) }),
+      probe(url, { method: 'POST', headers, body: body({ responseMimeType: 'application/json', responseSchema: schema }) })
+    ]);
+    return { model, fast, plain, json };
+  }));
+
+  const t0 = Date.now();
+  const v = await embed('teste', 'RETRIEVAL_QUERY');
+  return { listModels: list.status, available, tests, embed: { ok: Boolean(v), dims: v?.length ?? 0, ms: Date.now() - t0 }, configuredModel: Deno.env.get('GEMINI_MODEL') || null };
 }

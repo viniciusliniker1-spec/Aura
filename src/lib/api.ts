@@ -65,11 +65,21 @@ export interface ChatResult {
   cvRequest?: { role: string; format: 'pdf' | 'docx' };
 }
 
+export interface Probe { status: number; ms: number; msg: string }
+export interface DiagResult {
+  listModels: number;
+  available: string[];
+  tests: { model: string; fast: Probe; plain: Probe; json: Probe }[];
+  embed: { ok: boolean; dims: number; ms: number };
+  configuredModel: string | null;
+}
+
 export const chat = {
   send: (message: string, projectId?: string) =>
     callFunction<ChatResult>('aura-chat', { action: 'chat', message, projectId }),
   generatePanel: (prompt: string) =>
     callFunction<{ panel: GeneratedPanelSpec }>('aura-chat', { action: 'generate_panel', prompt }),
+  diagnose: () => callFunction<DiagResult>('aura-chat', { action: 'diagnose' }),
   liveToken: () => callFunction<{ token: string | null; model?: string }>('aura-chat', { action: 'live_token' })
 };
 

@@ -1,5 +1,5 @@
 import { admin, handle, json } from '../_shared/common.ts';
-import { embed, generateJSON, mintLiveToken, lastCall } from '../_shared/gemini.ts';
+import { embed, generateJSON, mintLiveToken, lastCall, diagnose } from '../_shared/gemini.ts';
 
 const PANEL_SCHEMA = {
   type: 'OBJECT',
@@ -34,6 +34,8 @@ const CHAT_SCHEMA = {
 
 Deno.serve(handle(async (body) => {
   const db = admin();
+
+  if (body.action === 'diagnose') return json(await diagnose());
 
   if (body.action === 'live_token') {
     const token = await mintLiveToken();

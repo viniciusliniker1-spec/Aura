@@ -1,5 +1,5 @@
 export type TabId = 'inicio' | 'chat' | 'projetos' | 'menu';
-export type SubviewId = 'browser' | 'vault' | 'files' | 'panels' | 'memory' | 'autonomy';
+export type SubviewId = 'browser' | 'vault' | 'files' | 'panels' | 'memory' | 'autonomy' | 'diagnostics';
 
 export interface MemoryItem {
   id: string;

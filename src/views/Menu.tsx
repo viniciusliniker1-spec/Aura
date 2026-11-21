@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, Globe, KeyRound, FileText, LayoutGrid, Shield, Brain } from 'lucide-react';
+import { ChevronRight, Globe, KeyRound, FileText, LayoutGrid, Shield, Brain, Stethoscope } from 'lucide-react';
 import { useAura } from '../state/AuraContext';
 import type { SubviewId } from '../types/aura';
 
@@ -11,7 +11,8 @@ const GROUP1: { id: SubviewId; label: string; Icon: typeof Globe }[] = [
 ];
 const GROUP2: { id: SubviewId; label: string; Icon: typeof Globe }[] = [
   { id: 'autonomy', label: 'Segurança e Autonomia', Icon: Shield },
-  { id: 'memory', label: 'Memória & Contexto (pgvector)', Icon: Brain }
+  { id: 'memory', label: 'Memória & Contexto (pgvector)', Icon: Brain },
+  { id: 'diagnostics', label: 'Diagnóstico da IA', Icon: Stethoscope }
 ];
 
 const Row: React.FC<{ id: SubviewId; label: string; Icon: typeof Globe }> = ({ id, label, Icon }) => {
