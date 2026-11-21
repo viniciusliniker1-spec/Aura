@@ -1,5 +1,6 @@
-import React, { useRef, useEffect } from 'react';
-import { Plus, Search, Mic, X, Globe, FileUp, KeyRound, Sparkles } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Search, Mic, X, Globe, FileUp, KeyRound, Sparkles, ArrowUp } from 'lucide-react';
+import { AutoTextarea } from './AutoTextarea';
 import { useAura } from '../state/AuraContext';
 import type { TabId, SubviewId } from '../types/aura';
 
@@ -49,30 +50,38 @@ export const TopBar: React.FC<{ onQuick: () => void; onNewProject: () => void }>
 
 export const Composer: React.FC<{ onQuick: () => void; onVoice: () => void }> = ({ onQuick, onVoice }) => {
   const { sendMessage, sending } = useAura();
-  const ref = useRef<HTMLInputElement>(null);
+  const [text, setText] = useState('');
+  const canSend = text.trim().length > 0 && !sending;
+  const submit = () => {
+    if (!canSend) return;
+    const v = text;
+    setText('');
+    void sendMessage(v);
+  };
   return (
     <div className="absolute left-4 right-4 z-30" style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
       <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const v = ref.current?.value ?? '';
-          if (ref.current) ref.current.value = '';
-          void sendMessage(v);
-        }}
-        className="glass-pill rounded-full pl-5 pr-2 py-1.5 flex items-center gap-2 shadow-2xl shadow-black/40"
+        onSubmit={(e) => { e.preventDefault(); submit(); }}
+        className="glass-pill rounded-[28px] pl-5 pr-2 py-1.5 flex items-end gap-1.5 shadow-2xl shadow-black/40"
       >
-        <input
-          ref={ref} type="text" autoComplete="off" disabled={sending}
+        <AutoTextarea
+          value={text}
+          onValueChange={setText}
+          maxRows={5}
           placeholder={sending ? 'Aura está pensando…' : 'Enviar mensagem para o Aura'}
-          className="flex-1 min-w-0 bg-transparent text-[14px] text-white placeholder-white/50 focus:outline-none py-2"
+          className="flex-1 min-w-0 bg-transparent text-[14px] leading-[20px] text-white placeholder-white/50 focus:outline-none py-[10px]"
         />
         <button type="button" title="Anexar arquivo ou abrir navegador" onClick={onQuick}
-          className="w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center text-white/80 hover:text-white transition">
+          className="w-9 h-9 mb-0.5 rounded-full hover:bg-white/10 flex items-center justify-center text-white/80 hover:text-white transition shrink-0">
           <Plus className="w-5 h-5" />
         </button>
         <button type="button" title="Falar com o Aura" onClick={onVoice}
-          className="w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center text-white/85 hover:text-white transition">
+          className="w-9 h-9 mb-0.5 rounded-full hover:bg-white/10 flex items-center justify-center text-white/85 hover:text-white transition shrink-0">
           <Mic className="w-5 h-5" />
+        </button>
+        <button type="submit" title="Enviar mensagem" aria-label="Enviar mensagem" disabled={!canSend}
+          className={`w-9 h-9 mb-0.5 rounded-full flex items-center justify-center transition shrink-0 ${canSend ? 'bg-[#F2F3F5] text-[#16181E]' : 'bg-white/10 text-white/35'}`}>
+          <ArrowUp className="w-5 h-5" />
         </button>
       </form>
     </div>

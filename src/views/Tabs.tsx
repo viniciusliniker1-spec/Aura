@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Activity, Plus, Clock, Globe, ChevronRight } from 'lucide-react';
 import { useAura } from '../state/AuraContext';
+import { AutoTextarea } from '../components/AutoTextarea';
 import type { RoutineState } from '../types/aura';
 
 /* ============================== INÍCIO ============================== */
@@ -160,10 +161,10 @@ export const ProjetosView: React.FC<{ onNew: () => void }> = ({ onNew }) => {
             <div key={i} className={`px-4 py-3 rounded-[22px] text-xs whitespace-pre-wrap ${m.role === 'user' ? 'bg-[#F2F3F5] text-[#16181E] ml-8' : 'glass-card text-white/90 mr-8'}`}>{m.text}</div>
           ))}
         </div>
-        <form onSubmit={async (e) => { e.preventDefault(); const v = text; setText(''); setBusy(true); await projectMessage(p.id, v); setBusy(false); }}
-          className="glass-pill rounded-full pl-4 pr-2 py-1.5 flex items-center gap-2">
-          <input value={text} onChange={(e) => setText(e.target.value)} disabled={busy} placeholder="Continuar neste projeto..." className="flex-1 min-w-0 bg-transparent text-xs text-white placeholder-white/50 focus:outline-none py-1.5" />
-          <button type="submit" disabled={busy} className="px-3.5 py-1.5 rounded-full btn-light text-xs font-medium">Enviar</button>
+        <form onSubmit={async (e) => { e.preventDefault(); if (!text.trim() || busy) return; const v = text; setText(''); setBusy(true); await projectMessage(p.id, v); setBusy(false); }}
+          className="glass-pill rounded-[24px] pl-4 pr-2 py-1.5 flex items-end gap-2">
+          <AutoTextarea value={text} onValueChange={setText} disabled={busy} maxRows={5} placeholder="Continuar neste projeto..." className="flex-1 min-w-0 bg-transparent text-xs leading-[18px] text-white placeholder-white/50 focus:outline-none py-[7px]" />
+          <button type="submit" disabled={busy || !text.trim()} className="px-3.5 py-1.5 mb-0.5 rounded-full btn-light text-xs font-medium disabled:opacity-40 shrink-0">Enviar</button>
         </form>
       </section>
     );
