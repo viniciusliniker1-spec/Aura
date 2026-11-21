@@ -5,12 +5,15 @@ const key = () => {
   if (!k) throw new Error('GEMINI_API_KEY não configurada (supabase secrets set GEMINI_API_KEY=...)');
   return k;
 };
-// gemini-2.5-flash está depreciado (desligamento previsto em 01/12/2026). Tenta, em ordem, o modelo do secret
-// GEMINI_MODEL (se houver) e depois alternativas estáveis, até uma funcionar para a sua chave.
-const MODEL_FALLBACKS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
-export const GEN_MODELS = (): string[] => {
+// Medido com a chave real do projeto (pedido de chat com JSON): gemini-3.1-flash-lite ≈1,1s, 3.5-flash-lite ≈0,8s
+// (exige config simples), 3-flash-preview ≈1,0s, 3.5-flash ≈10s; 3.8/3.7/3.6-flash travam ou levam 17-40s;
+// 2.5-* retornam 404. Por isso a ordem abaixo. O secret GEMINI_MODEL, se existir, tem prioridade.
+const CHAT_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3-flash-preview', 'gemini-3.5-flash'];
+// Texto longo e de qualidade (currículo): modelo mais forte primeiro.
+const QUALITY_MODELS = ['gemini-3-flash-preview', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
+export const GEN_MODELS = (quality = false): string[] => {
   const custom = Deno.env.get('GEMINI_MODEL');
-  return [...new Set([...(custom ? [custom] : []), ...MODEL_FALLBACKS])];
+  return [...new Set([...(custom ? [custom] : []), ...(quality ? QUALITY_MODELS : CHAT_MODELS)])];
 };
 export const EMBED_MODEL = () => Deno.env.get('GEMINI_EMBED_MODEL') || 'gemini-embedding-001';
 
@@ -41,6 +44,8 @@ export interface GenOpts {
   system?: string;
   contents: { role: 'user' | 'model'; parts: { text: string }[] }[];
   schema?: Record<string, unknown>;
+  /** Texto longo/qualidade (ex.: currículo): modelo mais forte primeiro, sem limite curto de saída. */
+  quality?: boolean;
 }
 
 /** Diagnóstico da última geração (modelo usado e tempo), devolvido ao app. */
@@ -50,20 +55,21 @@ export const lastCall = { model: '', ms: 0 };
 // "Failed to send a request"). Prazo total + prazo por tentativa + "hedge": se o modelo não respondeu em
 // HEDGE_MS, dispara o próximo em paralelo e fica com quem responder primeiro.
 const TOTAL_BUDGET_MS = 40_000;
-const PER_CALL_MS = 20_000;
-const HEDGE_MS = 6_000;
+const PER_CALL_MS = 25_000;
+const HEDGE_MS = 2_500;
 
 type Attempt = { ok: true; text: string } | { ok: false; msg: string; fatal: boolean };
 
-export async function generate({ system, contents, schema }: GenOpts): Promise<string> {
+export async function generate({ system, contents, schema, quality }: GenOpts): Promise<string> {
   const k = key();
   const started = Date.now();
   const base = { ...(system ? { system_instruction: { parts: [{ text: system }] } } : {}), contents };
   // Velocidade: sem "pensamento" interno e resposta limitada. Se o modelo rejeitar o parâmetro de pensamento,
   // repete a chamada sem ele.
   const out = schema ? { responseMimeType: 'application/json', responseSchema: schema } : {};
-  const cfgFast = { ...out, thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 2048 };
-  const cfgPlain = { ...out, maxOutputTokens: 2048 };
+  const maxTokens = quality ? 8192 : 2048;
+  const cfgFast = quality ? { ...out, maxOutputTokens: maxTokens } : { ...out, thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: maxTokens };
+  const cfgPlain = { ...out, maxOutputTokens: maxTokens };
 
   const brief = async (r: Response) => {
     const raw = await r.text();
@@ -97,7 +103,7 @@ export async function generate({ system, contents, schema }: GenOpts): Promise<s
     }
   };
 
-  const models = GEN_MODELS();
+  const models = GEN_MODELS(quality);
   return await new Promise<string>((resolve, reject) => {
     const controllers: AbortController[] = [];
     const errors: string[] = [];

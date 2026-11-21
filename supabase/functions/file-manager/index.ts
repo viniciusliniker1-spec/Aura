@@ -61,6 +61,7 @@ Deno.serve(handle(async (b) => {
 
     const markdown = await generate({
       system: 'Você é um revisor de currículos. Mantenha TODOS os fatos reais; nunca invente experiências, cargos, datas, métricas ou formações. Reordene e reescreva para destacar o que é mais relevante para a vaga. Saída: Markdown limpo (# Nome, ## Seções, - bullets, **negrito** pontual), em português, sem comentários fora do currículo.',
+      quality: true,
       contents: [{ role: 'user', parts: [{ text: `Vaga/objetivo: "${targetRole}"\n\nCurrículo base:\n${base.slice(0, 12000)}` }] }]
     });
     if (!markdown.trim()) throw new Error('A IA não devolveu conteúdo');
