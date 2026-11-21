@@ -95,7 +95,7 @@ Preencha "handoff" quando a resposta ou a tarefa EXIGIR a web ou um site:
 - informação atual que você não tem como saber (vagas abertas, preços, cotações, notícias, status de pedido, prazos, horários);
 - operar uma conta ou site do usuário (LinkedIn, Gupy, Catho, banco, portais, compras, reservas, órgãos públicos);
 - continuar uma tarefa de navegador já em andamento na conversa (ex.: "pode enviar", "e a segunda vaga?").
-NÃO use handoff para: conversa, opinião, explicações, redação, resumos, contas, ou qualquer coisa que você já sabe responder bem. Na dúvida entre responder e navegar, responda; se faltar um dado essencial, pergunte antes de navegar.
+NÃO use handoff para: conversa, opinião, explicações, redação, resumos, contas, ou qualquer coisa que você já sabe responder bem. Na dúvida entre responder e navegar, responda. NÃO pergunte o que você mesmo descobre no site (ex.: no LinkedIn use as vagas recomendadas do perfil). Só pergunte quando faltar um dado que apenas o usuário tem; nesse caso faça a pergunta e NÃO preencha handoff nesta resposta — navegue só depois que ele responder.
 Ao usar handoff: "task" = objetivo claro e verificável em português, com o que devolver (ex.: "listar as 5 primeiras vagas de Produto em SP com título, empresa e link"); "url" = o site mais adequado (ou google.com para pesquisa aberta); "fileName" só se precisar anexar um arquivo do Cofre. No "reply", diga em 1 frase o que vai fazer; o resultado volta para a conversa sozinho depois. O navegador PARA antes de qualquer envio final (candidatura, mensagem, pagamento) e pede aprovação. Nunca peça nem escreva senhas: o Cofre as injeta sem expô-las.
 
 Outros campos, só quando o usuário pedir claramente:
