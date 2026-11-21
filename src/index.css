@@ -1,0 +1,70 @@
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/newsreader/400.css';
+@import '@fontsource/newsreader/500.css';
+@import '@fontsource/newsreader/400-italic.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body, #root { height: 100%; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #13161F;
+  color: #F3F4F6;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+@layer components {
+  .aura-backdrop {
+    background:
+      radial-gradient(ellipse 85% 55% at 15% 15%, rgba(122, 146, 186, 0.85) 0%, transparent 65%),
+      radial-gradient(ellipse 80% 60% at 88% 30%, rgba(92, 114, 158, 0.9) 0%, transparent 65%),
+      radial-gradient(ellipse 90% 55% at 20% 95%, rgba(145, 140, 134, 0.72) 0%, transparent 60%),
+      radial-gradient(ellipse 80% 55% at 85% 88%, rgba(126, 136, 168, 0.85) 0%, transparent 65%),
+      linear-gradient(165deg, #5c7093 0%, #6d80a3 45%, #7a88a6 75%, #848691 100%);
+  }
+  .glass-card {
+    background: rgba(34, 38, 48, 0.78);
+    backdrop-filter: blur(26px);
+    -webkit-backdrop-filter: blur(26px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .glass-pill {
+    background: rgba(36, 40, 50, 0.84);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+  }
+  .glass-tile {
+    background: rgba(20, 23, 30, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .obsidian-card {
+    background: rgba(14, 16, 20, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .btn-light {
+    background: #F2F3F5;
+    color: #16181E;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in { animation: fadeUp 0.22s ease-out forwards; }
+@keyframes waveBar { 0%, 100% { height: 10px; } 50% { height: 34px; } }
+.wave-bar { animation: waveBar 0.85s ease-in-out infinite; }
+
+input, select, textarea { font-family: inherit; }
+select option { color: #181A20; }

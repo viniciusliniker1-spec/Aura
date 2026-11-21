@@ -1,0 +1,15 @@
+# Config mínima. Rode `supabase link --project-ref SEU_PROJECT_REF` antes de `db push` / `functions deploy`.
+project_id = "aura-os"
+
+[functions.aura-chat]
+verify_jwt = true
+[functions.aura-data]
+verify_jwt = true
+[functions.proactive-sync]
+verify_jwt = true
+[functions.handoff-browser]
+verify_jwt = true
+[functions.vault-credentials]
+verify_jwt = true
+[functions.file-manager]
+verify_jwt = true

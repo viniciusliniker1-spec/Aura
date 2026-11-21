@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>aura — Assistente Pessoal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            serif: ['Newsreader', 'Georgia', 'serif']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #13161F;
+      color: #F3F4F6;
+      margin: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    /* Signature misty atmospheric backdrop inspired by reference */
+    .aura-backdrop {
+      background:
+        radial-gradient(ellipse 85% 55% at 15% 15%, rgba(122, 146, 186, 0.85) 0%, transparent 65%),
+        radial-gradient(ellipse 80% 60% at 88% 30%, rgba(92, 114, 158, 0.9) 0%, transparent 65%),
+        radial-gradient(ellipse 90% 55% at 20% 95%, rgba(145, 140, 134, 0.72) 0%, transparent 60%),
+        radial-gradient(ellipse 80% 55% at 85% 88%, rgba(126, 136, 168, 0.85) 0%, transparent 65%),
+        linear-gradient(165deg, #5c7093 0%, #6d80a3 45%, #7a88a6 75%, #848691 100%);
+    }
+    .glass-card {
+      background: rgba(34, 38, 48, 0.78);
+      backdrop-filter: blur(26px);
+      -webkit-backdrop-filter: blur(26px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-pill {
+      background: rgba(36, 40, 50, 0.84);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+    }
+    .glass-tile {
+      background: rgba(20, 23, 30, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .obsidian-card {
+      background: rgba(14, 16, 20, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-in { animation: fadeUp 0.22s ease-out forwards; }
+    @keyframes waveBar { 0%, 100% { height: 10px; } 50% { height: 34px; } }
+    .wave-bar { animation: waveBar 0.85s ease-in-out infinite; }
+  </style>
+</head>
+<body class="flex items-center justify-center sm:p-4">
+
+  <!-- Mobile Phone Shell -->
+  <div id="appShell" class="relative w-full sm:max-w-[412px] h-screen sm:h-[852px] sm:max-h-[93vh] aura-backdrop sm:rounded-[38px] sm:shadow-2xl sm:shadow-black/75 sm:border sm:border-white/15 flex flex-col overflow-hidden">
+
+    <!-- TOP FLOATING NAVIGATION BAR (Exact Reference Layout) -->
+    <header class="shrink-0 px-4 pt-4 pb-2.5 flex items-center justify-between gap-2 z-30">
+      <!-- Left circular action button (+ on Início/Projetos, Search on Chat) -->
+      <button id="btnTopLeft" type="button" title="Ação rápida" class="w-11 h-11 rounded-full glass-pill flex items-center justify-center text-white/90 hover:bg-black/40 transition shrink-0">
+        <i id="topLeftIcon" data-lucide="plus" class="w-5 h-5"></i>
+      </button>
+
+      <!-- Center 3-tab Segmented Pill: Início | Chat | Projetos -->
+      <nav class="glass-pill rounded-full p-1 flex items-center gap-0.5 shadow-lg shadow-black/20">
+        <button type="button" data-tab="inicio" class="top-tab px-4 py-2 rounded-full text-[13px] font-medium transition bg-[#F2F3F5] text-[#181A20]">Início</button>
+        <button type="button" data-tab="chat" class="top-tab px-4 py-2 rounded-full text-[13px] font-medium transition text-white/70 hover:text-white">Chat</button>
+        <button type="button" data-tab="projetos" class="top-tab px-4 py-2 rounded-full text-[13px] font-medium transition text-white/70 hover:text-white">Projetos</button>
+      </nav>
+
+      <!-- Right Avatar Button (Opens Full Settings / Vault / Browser / Files Menu) -->
+      <button id="btnAvatarMenu" type="button" title="Menu, Cofre e Navegador" class="w-11 h-11 rounded-full bg-[#0A57A3] hover:bg-[#0C66BE] border border-white/20 flex items-center justify-center text-white text-lg font-medium shadow-md transition shrink-0">
+        a
+      </button>
+    </header>
+
+    <!-- MAIN SCROLLABLE CONTENT -->
+    <main id="mainViewport" class="flex-1 overflow-y-auto no-scrollbar px-4 pt-2 pb-28 space-y-3.5">
+
+      <!-- ==================== TAB 1: INÍCIO ==================== -->
+      <section id="view-inicio" class="space-y-3.5">
+
+        <!-- Hero Connection Card ("aura pode fazer mais") -->
+        <div id="connectCard" class="glass-card rounded-[28px] p-5 space-y-3.5 shadow-xl shadow-black/15">
+          <h2 class="font-serif text-[27px] leading-tight text-white tracking-tight">aura pode fazer mais</h2>
+          <p class="text-[14px] leading-relaxed text-white/85">
+            Conecte seu e-mail e o Cofre para o Aura agir por você em qualquer site, atualizar seu currículo e antecipar sua rotina.
+          </p>
+          <button id="btnConnectGoogle" type="button" class="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center gap-2.5 text-sm font-medium text-white transition">
+            <span class="w-5 h-5 rounded-full bg-white text-[#181A20] font-bold text-xs flex items-center justify-center">G</span>
+            <span id="connectGoogleLabel">Conectar Google & Cofre</span>
+          </button>
+        </div>
+
+        <!-- Inline Action Card 1 (Matches "Mapear a obra..." card style) -->
+        <div id="proactiveFeed" class="space-y-3"></div>
+
+        <!-- Weather + Daily Panel Card (Matches Extrema, BR card with dark inner tiles) -->
+        <div class="glass-card rounded-[28px] p-4 space-y-3 shadow-xl shadow-black/15">
+          <div class="flex items-center justify-between px-1">
+            <span class="text-sm font-medium text-white/95 flex items-center gap-2">
+              <i data-lucide="activity" class="w-4 h-4 text-white/80"></i>
+              Painel · Rotina & Água
+            </span>
+            <span id="inicioHabitsRatio" class="text-xs text-white/60">1/3 feitos</span>
+          </div>
+
+          <div class="glass-tile rounded-2xl p-3.5 flex items-center justify-between">
+            <div>
+              <p class="text-xs text-white/55">Hidratação hoje</p>
+              <p id="inicioWaterVal" class="text-2xl font-medium text-white tracking-tight mt-0.5">1.250 ml</p>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button type="button" data-water="-250" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 text-white text-sm flex items-center justify-center">−</button>
+              <button type="button" data-water="250" class="w-9 h-9 rounded-full bg-white text-[#16181E] font-semibold text-sm flex items-center justify-center">+</button>
+            </div>
+          </div>
+
+          <div class="glass-tile rounded-2xl p-3.5 space-y-2">
+            <p class="text-xs text-white/55">Hábitos do dia</p>
+            <div id="inicioHabitsList" class="space-y-1.5"></div>
+          </div>
+
+          <button id="btnOpenPanelsSheet" type="button" class="w-full py-2.5 rounded-2xl bg-white/15 hover:bg-white/20 text-xs font-medium text-white transition">
+            Abrir todos os painéis (Gastos, Pomodoro)
+          </button>
+        </div>
+
+        <!-- Quick Create New Panel Pill at bottom of feed -->
+        <button id="btnNewPanelPrompt" type="button" class="w-full py-3 rounded-full glass-pill text-xs font-medium text-white/85 hover:text-white flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="plus" class="w-4 h-4"></i> Criar um novo painel
+        </button>
+
+      </section>
+
+      <!-- ==================== TAB 2: CHAT ==================== -->
+      <section id="view-chat" class="hidden space-y-3">
+        <!-- Floating White Status/Task Pill (Exact match to "Gerenciar Inscrição...") -->
+        <div id="chatTopActionPill" class="flex justify-end">
+          <button id="btnOpenActiveBrowser" type="button" class="px-4 py-2.5 rounded-full bg-[#F2F3F5] hover:bg-white text-[#181A20] text-xs font-medium shadow-lg flex items-center gap-2 transition">
+            <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+            <span id="chatPillLabel">Gerenciar envio de CV · Gupy</span>
+          </button>
+        </div>
+
+        <!-- Chat Bubbles + Embedded Obsidian Handoff Link Cards -->
+        <div id="chatMessages" class="space-y-3 pb-2"></div>
+      </section>
+
+      <!-- ==================== TAB 3: PROJETOS ==================== -->
+      <section id="view-projetos" class="hidden space-y-4">
+        <!-- Editorial Hero Statement (Exact match to Screenshot 3) -->
+        <div id="projetosHero" class="pt-10 pb-4 px-2">
+          <p class="text-[28px] leading-[1.28] text-white/95 font-normal tracking-tight">
+            <span class="font-serif text-[32px]">projetos,</span> são um espaço para organizar suas tarefas e experiências de <span class="text-white/75">longo</span> prazo. Clique em
+            <button id="btnInlineNewProject" type="button" class="inline-flex items-center justify-center w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 border border-white/15 text-white align-middle mx-1 transition">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+            </button>
+            para iniciar um novo projeto.
+          </p>
+        </div>
+
+        <!-- Existing Projects Cards -->
+        <div id="projectsList" class="space-y-2.5"></div>
+        <div id="projectDetailView" class="hidden space-y-3"></div>
+      </section>
+
+      <!-- ==================== VIEW 4: MENU / PERFIL / COFRE / NAVEGADOR (Avatar "a") ==================== -->
+      <section id="view-menu" class="hidden space-y-3.5 animate-in">
+        <!-- Top Brand Card (Matches "hark pro" card in Screenshot 1) -->
+        <div class="glass-card rounded-[28px] p-5 space-y-4">
+          <div class="flex items-baseline justify-between">
+            <div class="font-serif text-[26px] text-white tracking-tight">
+              aura <span class="italic text-white/50">pessoal</span>
+            </div>
+            <span class="text-[11px] px-2.5 py-1 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/20">Uso individual</span>
+          </div>
+          <button type="button" data-open-subview="browser" class="w-full py-3 rounded-2xl bg-[#F2F3F5] hover:bg-white text-[#16181E] text-sm font-medium transition">
+            Abrir Navegador Universal <span class="font-serif italic">handoff</span>
+          </button>
+          <button type="button" data-open-subview="memory" class="w-full pt-3 border-t border-white/10 flex items-center justify-between text-sm text-white/90 hover:text-white">
+            <span>Memória longa (<span id="menuMemCount">5</span> fatos salvos)</span>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-white/50"></i>
+          </button>
+        </div>
+
+        <!-- Group 1: Core Super-Features -->
+        <div class="glass-card rounded-[28px] overflow-hidden divide-y divide-white/10">
+          <button type="button" data-open-subview="browser" class="w-full px-5 py-4 flex items-center justify-between text-sm text-white/90 hover:bg-white/5 transition">
+            <span class="flex items-center gap-3.5"><i data-lucide="globe" class="w-4 h-4 text-white/75"></i> Navegador Universal (Qualquer site)</span>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-white/45"></i>
+          </button>
+          <button type="button" data-open-subview="vault" class="w-full px-5 py-4 flex items-center justify-between text-sm text-white/90 hover:bg-white/5 transition">
+            <span class="flex items-center gap-3.5"><i data-lucide="key-round" class="w-4 h-4 text-white/75"></i> Cofre de Senhas e Logins (AES-256)</span>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-white/45"></i>
+          </button>
+          <button type="button" data-open-subview="files" class="w-full px-5 py-4 flex items-center justify-between text-sm text-white/90 hover:bg-white/5 transition">
+            <span class="flex items-center gap-3.5"><i data-lucide="file-text" class="w-4 h-4 text-white/75"></i> Arquivos & Currículo (PDF / Word)</span>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-white/45"></i>
+          </button>
+          <button type="button" data-open-subview="panels" class="w-full px-5 py-4 flex items-center justify-between text-sm text-white/90 hover:bg-white/5 transition">
+            <span class="flex items-center gap-3.5"><i data-lucide="layout-grid" class="w-4 h-4 text-white/75"></i> Meus Painéis (Micro-apps)</span>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-white/45"></i>
+          </button>
+        </div>
+
+        <!-- Group 2: Security & System -->
+        <div class="glass-card rounded-[28px] overflow-hidden divide-y divide-white/10">
+          <button type="button" data-open-subview="autonomy" class="w-full px-5 py-4 flex items-center justify-between text-sm text-white/90 hover:bg-white/5 transition">
+            <span class="flex items-center gap-3.5"><i data-lucide="shield" class="w-4 h-4 text-white/75"></i> Segurança e Autonomia</span>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-white/45"></i>
+          </button>
+          <button type="button" data-open-subview="memory" class="w-full px-5 py-4 flex items-center justify-between text-sm text-white/90 hover:bg-white/5 transition">
+            <span class="flex items-center gap-3.5"><i data-lucide="brain" class="w-4 h-4 text-white/75"></i> Memória & Contexto (pgvector)</span>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-white/45"></i>
+          </button>
+        </div>
+      </section>
+
+      <!-- ==================== SUBVIEWS (Browser, Vault, Files, Panels, Memory, Autonomy) ==================== -->
+      <section id="view-subview" class="hidden space-y-3.5 animate-in">
+        <button id="btnBackFromSubview" type="button" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full glass-pill text-xs text-white/90 hover:text-white">
+          <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Voltar
+        </button>
+        <div id="subviewBody" class="space-y-3.5"></div>
+      </section>
+
+    </main>
+
+    <!-- FLOATING BOTTOM PILL COMPOSER (Matches Reference Screenshots 2 & 4) -->
+    <div id="floatingComposer" class="absolute bottom-4 left-4 right-4 z-30">
+      <form id="chatForm" class="glass-pill rounded-full pl-5 pr-2 py-1.5 flex items-center gap-2 shadow-2xl shadow-black/40">
+        <input id="chatInput" type="text" autocomplete="off" placeholder="Enviar mensagem para o Aura" class="flex-1 bg-transparent text-[14px] text-white placeholder-white/50 focus:outline-none py-2" />
+        <button id="btnQuickAttach" type="button" title="Anexar arquivo ou abrir navegador" class="w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center text-white/80 hover:text-white transition">
+          <i data-lucide="plus" class="w-5 h-5"></i>
+        </button>
+        <button id="btnVoiceOpen" type="button" title="Falar com o Aura" class="w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center text-white/85 hover:text-white transition">
+          <i data-lucide="mic" class="w-5 h-5"></i>
+        </button>
+      </form>
+    </div>
+
+    <!-- QUICK ACTION SHEET (When tapping "+" inside composer or top-left) -->
+    <div id="quickSheet" class="hidden absolute inset-0 bg-black/45 backdrop-blur-sm z-40 flex flex-col justify-end p-4">
+      <div class="glass-card rounded-[28px] p-4 space-y-2 animate-in">
+        <div class="flex items-center justify-between px-1 pb-1">
+          <span class="text-xs font-medium text-white/70">Ações rápidas do Aura</span>
+          <button id="btnCloseQuickSheet" type="button" class="text-white/60 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+        </div>
+        <button type="button" data-quick-action="browser" class="w-full px-4 py-3 rounded-2xl glass-tile hover:bg-white/10 text-left text-sm text-white flex items-center gap-3"><i data-lucide="globe" class="w-4 h-4 text-sky-300"></i> Acessar qualquer site (Navegador Handoff)</button>
+        <button type="button" data-quick-action="files" class="w-full px-4 py-3 rounded-2xl glass-tile hover:bg-white/10 text-left text-sm text-white flex items-center gap-3"><i data-lucide="file-up" class="w-4 h-4 text-emerald-300"></i> Atualizar currículo / Enviar PDF ou Word</button>
+        <button type="button" data-quick-action="vault" class="w-full px-4 py-3 rounded-2xl glass-tile hover:bg-white/10 text-left text-sm text-white flex items-center gap-3"><i data-lucide="key-round" class="w-4 h-4 text-amber-300"></i> Abrir Cofre de Senhas (AES-256)</button>
+        <button type="button" data-quick-action="panels" class="w-full px-4 py-3 rounded-2xl glass-tile hover:bg-white/10 text-left text-sm text-white flex items-center gap-3"><i data-lucide="sparkles" class="w-4 h-4 text-purple-300"></i> Criar novo Painel (micro-app)</button>
+      </div>
+    </div>
+
+    <!-- VOICE LIVE OVERLAY -->
+    <div id="voiceOverlay" class="hidden absolute inset-0 aura-backdrop z-50 flex flex-col justify-between p-6 animate-in">
+      <div class="flex items-center justify-between">
+        <span class="px-3.5 py-1.5 rounded-full glass-pill text-xs text-white/90">Voz Live · Aura</span>
+        <button id="btnVoiceClose" type="button" class="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div class="flex flex-col items-center text-center space-y-6 my-auto">
+        <div class="w-24 h-24 rounded-full bg-[#F2F3F5] text-[#16181E] flex items-center justify-center shadow-2xl">
+          <i data-lucide="mic" class="w-9 h-9"></i>
+        </div>
+        <div class="flex items-center justify-center gap-1.5 h-10">
+          <span class="w-1.5 bg-white/90 rounded-full wave-bar" style="animation-delay:0s"></span>
+          <span class="w-1.5 bg-white/75 rounded-full wave-bar" style="animation-delay:0.15s"></span>
+          <span class="w-1.5 bg-white/90 rounded-full wave-bar" style="animation-delay:0.3s"></span>
+          <span class="w-1.5 bg-white/75 rounded-full wave-bar" style="animation-delay:0.45s"></span>
+        </div>
+        <p class="font-serif text-2xl text-white">Estou ouvindo...</p>
+        <div class="w-full space-y-2">
+          <button type="button" data-voice-sample="Acesse a Gupy com meu login salvo e envie meu currículo em PDF" class="w-full text-left px-4 py-3 rounded-2xl glass-card text-xs text-white/90">“Acesse a Gupy com meu login salvo e envie meu currículo em PDF”</button>
+          <button type="button" data-voice-sample="Atualize meu currículo em Word para uma vaga de Produto" class="w-full text-left px-4 py-3 rounded-2xl glass-card text-xs text-white/90">“Atualize meu currículo em Word para uma vaga de Produto”</button>
+          <button type="button" data-voice-sample="Cheque minhas mensagens novas no LinkedIn" class="w-full text-left px-4 py-3 rounded-2xl glass-card text-xs text-white/90">“Cheque minhas mensagens novas no LinkedIn”</button>
+        </div>
+      </div>
+      <button id="btnVoiceCancel" type="button" class="w-full py-3 rounded-full glass-pill text-xs font-medium text-white">Voltar</button>
+    </div>
+
+    <!-- NEW PROJECT MODAL -->
+    <div id="projectModal" class="hidden absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-5">
+      <form id="newProjectForm" class="w-full glass-card rounded-[28px] p-5 space-y-3 animate-in">
+        <div class="flex items-center justify-between">
+          <h3 class="font-serif text-xl text-white">Novo projeto</h3>
+          <button id="btnCloseProjectModal" type="button" class="text-white/60 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+        </div>
+        <input id="projTitleInput" type="text" required placeholder="Nome do projeto" class="w-full glass-tile rounded-2xl px-3.5 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none" />
+        <input id="projDescInput" type="text" required placeholder="Objetivo de longo prazo" class="w-full glass-tile rounded-2xl px-3.5 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none" />
+        <div class="flex justify-end gap-2 pt-1">
+          <button id="btnCancelProject" type="button" class="px-4 py-2 rounded-full glass-tile text-xs text-white/80">Cancelar</button>
+          <button type="submit" class="px-5 py-2 rounded-full bg-[#F2F3F5] text-[#16181E] text-xs font-medium">Criar</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast" class="pointer-events-none opacity-0 transition-opacity duration-200 absolute top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full obsidian-card text-xs text-white shadow-2xl whitespace-nowrap"></div>
+
+  </div>
+
+  <script>
+    const state = {
+      activeTab: 'inicio',
+      currentSubview: null,
+      googleConnected: false,
+      selectedProjectId: null,
+      revealedCredId: null,
+      memories: [
+        { id: 'm1', tag: 'Rotina', text: 'Blocos de foco profundo entre 8h e 10h sem reuniões.' },
+        { id: 'm2', tag: 'Carreira', text: 'Sempre adaptar o currículo sob medida antes de anexar em portais.' },
+        { id: 'm3', tag: 'Segurança', text: 'Salvar novos logins no Cofre AES-256 e pedir aprovação antes de enviar.' },
+        { id: 'm4', tag: 'Financeiro', text: 'Teto semanal de gastos livres definido em R$ 450.' },
+        { id: 'm5', tag: 'Saúde', text: 'Meta diária: 2.000 ml de água e treino de 45 minutos.' }
+      ],
+      credentials: [
+        { id: 'cr1', siteName: 'LinkedIn', domain: 'linkedin.com', username: 'meu.email@gmail.com', pass: 'Lk#2026!Segura' },
+        { id: 'cr2', siteName: 'Gupy Vagas', domain: 'gupy.io', username: 'meu.email@gmail.com', pass: 'Gupy@8841!' },
+        { id: 'cr3', siteName: 'Portal Energia CPFL', domain: 'agencia.cpfl.com.br', username: '123.456.789-00', pass: 'Cpfl*9920' }
+      ],
+      files: [
+        { id: 'f1', name: 'Curriculo_Principal_2026.pdf', ext: 'pdf', size: '248 KB', version: 3 },
+        { id: 'f2', name: 'Curriculo_Editavel_2026.docx', ext: 'docx', size: '112 KB', version: 2 },
+        { id: 'f3', name: 'Portfolio_Projetos.pdf', ext: 'pdf', size: '1.4 MB', version: 1 }
+      ],
+      autonomy: [
+        { id: 'au1', label: 'Fazer login automático usando o Cofre', auto: true },
+        { id: 'au2', label: 'Salvar novos logins/senhas automaticamente', auto: true },
+        { id: 'au3', label: 'Adaptar versão de currículo (PDF/Word)', auto: true },
+        { id: 'au4', label: 'Enviar candidaturas e formulários finais', auto: false },
+        { id: 'au5', label: 'Aprovar pagamentos ou compras', auto: false }
+      ],
+      proactiveCards: [
+        {
+          id: 'pc1',
+          verb: 'Enviar CV',
+          text: 'na vaga aberta da Gupy com seu login salvo e Curriculo_Principal_2026.pdf',
+          badge: 'GY',
+          badgeBg: 'bg-emerald-500 text-white',
+          url: 'gupy.io/candidatura',
+          file: 'Curriculo_Principal_2026.pdf'
+        },
+        {
+          id: 'pc2',
+          verb: 'Responder',
+          text: '2 mensagens de recrutadores no LinkedIn (rascunhos prontos para revisar)',
+          badge: 'in',
+          badgeBg: 'bg-[#0A66C2] text-white',
+          url: 'linkedin.com/messaging',
+          file: null
+        }
+      ],
+      chat: [
+        {
+          id: 'c1',
+          role: 'assistant',
+          text: 'Encontrei uma vaga compatível na Gupy e já preparei seu login pelo Cofre AES-256 junto com o arquivo Curriculo_Principal_2026.pdf. Quer que eu abra o portal e finalize o preenchimento para você revisar antes de enviar?'
+        },
+        {
+          id: 'c2',
+          role: 'handoff_card',
+          title: 'Candidatura · Gupy',
+          domain: 'gupy.io',
+          task: 'Fazer login pelo Cofre e anexar Curriculo_Principal_2026.pdf',
+          file: 'Curriculo_Principal_2026.pdf'
+        },
+        {
+          id: 'c3',
+          role: 'divider',
+          text: 'Resumo noturno para qui. 20'
+        },
+        {
+          id: 'c4',
+          role: 'assistant',
+          text: 'Sua fatura de energia (R$ 184,20) vence amanhã e você tem 2 mensagens novas no LinkedIn. Quer que eu baixe a 2ª via em PDF no portal ou abra o LinkedIn primeiro?'
+        }
+      ],
+      projects: [
+        { id: 'p1', title: 'Carreira & Candidaturas', desc: 'Atualização de currículo (PDF/Word) e envios via Navegador Universal', files: ['Curriculo_Principal_2026.pdf', 'Curriculo_Editavel_2026.docx'], messages: [{ role: 'assistant', text: 'Pronto para adaptar seu currículo sob medida antes de cada candidatura.' }] },
+        { id: 'p2', title: 'Aura OS — App Pessoal', desc: 'Build Capacitor (sem Expo Go) + Supabase pgvector + Cofre AES-256', files: ['CLAUDE_HANDOFF.md', '002_vault_files_autonomy.sql'], messages: [{ role: 'assistant', text: 'Pacote completo pronto para o Claude compilar.' }] }
+      ],
+      panels: {
+        waterMl: 1250, waterGoal: 2000,
+        habits: [
+          { id: 'h1', label: 'Foco profundo (8h–10h)', done: true },
+          { id: 'h2', label: 'Treino 45 min', done: false },
+          { id: 'h3', label: 'Leitura 20 min', done: false }
+        ],
+        expenses: [
+          { id: 'e1', title: 'Café + pão de queijo', amount: 24.5 },
+          { id: 'e2', title: 'Mercado semanal', amount: 148.9 }
+        ],
+        customPanels: []
+      },
+      handoff: null,
+      handoffTimer: null,
+      pomodoro: { seconds: 25 * 60, running: false, interval: null }
+    };
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.remove('opacity-0'); el.classList.add('opacity-100');
+      clearTimeout(el._t);
+      el._t = setTimeout(() => { el.classList.remove('opacity-100'); el.classList.add('opacity-0'); }, 2400);
+    }
+    function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function refreshIcons() { if (window.lucide) window.lucide.createIcons(); }
+    function formatSec(sec) { return `${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`; }
+
+    // ---------- TAB & SUBVIEW NAVIGATION ----------
+    function setActiveTab(tab) {
+      state.activeTab = tab;
+      state.currentSubview = null;
+      ['inicio', 'chat', 'projetos', 'menu', 'subview'].forEach(v => {
+        document.getElementById(`view-${v}`).classList.toggle('hidden', v !== tab);
+      });
+      document.querySelectorAll('.top-tab').forEach(btn => {
+        const active = btn.dataset.tab === tab;
+        btn.classList.toggle('bg-[#F2F3F5]', active);
+        btn.classList.toggle('text-[#181A20]', active);
+        btn.classList.toggle('text-white/70', !active);
+      });
+      const showComposer = (tab === 'inicio' || tab === 'chat');
+      document.getElementById('floatingComposer').classList.toggle('hidden', !showComposer);
+      document.getElementById('topLeftIcon').setAttribute('data-lucide', tab === 'chat' ? 'search' : 'plus');
+      if (tab === 'inicio') renderInicio();
+      if (tab === 'chat') renderChat();
+      if (tab === 'projetos') renderProjects();
+      if (tab === 'menu') document.getElementById('menuMemCount').textContent = state.memories.length;
+      document.getElementById('mainViewport').scrollTop = 0;
+      refreshIcons();
+    }
+
+    function openSubview(name) {
+      state.currentSubview = name;
+      ['inicio', 'chat', 'projetos', 'menu'].forEach(v => document.getElementById(`view-${v}`).classList.add('hidden'));
+      document.getElementById('view-subview').classList.remove('hidden');
+      document.getElementById('floatingComposer').classList.add('hidden');
+      renderSubview();
+      document.getElementById('mainViewport').scrollTop = 0;
+    }
+
+    // ---------- RENDER INÍCIO ----------
+    function renderInicio() {
+      document.getElementById('proactiveFeed').innerHTML = state.proactiveCards.map(card => `
+        <button type="button" data-run-proactive="${card.id}" class="w-full text-left glass-card hover:bg-[#2a2f3d]/85 rounded-[26px] p-4 shadow-xl shadow-black/15 transition animate-in">
+          <div class="flex items-start gap-2.5 leading-snug text-[14px] text-white/95">
+            <span class="shrink-0 px-3 py-1 rounded-xl bg-black/35 border border-white/10 text-xs font-medium text-white">${escapeHtml(card.verb)}</span>
+            <span class="flex-1">${escapeHtml(card.text)}</span>
+            <span class="shrink-0 w-7 h-7 rounded-full ${card.badgeBg} text-[11px] font-bold flex items-center justify-center shadow">${card.badge}</span>
+          </div>
+        </button>
+      `).join('');
+
+      const done = state.panels.habits.filter(h => h.done).length;
+      document.getElementById('inicioHabitsRatio').textContent = `${done}/${state.panels.habits.length} feitos`;
+      document.getElementById('inicioWaterVal').textContent = `${state.panels.waterMl.toLocaleString('pt-BR')} ml`;
+      document.getElementById('inicioHabitsList').innerHTML = state.panels.habits.map(h => `
+        <button type="button" data-toggle-habit="${h.id}" class="w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition ${h.done ? 'bg-white/10 text-white/60 line-through' : 'bg-white/5 hover:bg-white/10 text-white/90'}">
+          <span>${escapeHtml(h.label)}</span>
+          <span class="w-4 h-4 rounded-full border flex items-center justify-center text-[10px] ${h.done ? 'bg-emerald-400 border-emerald-400 text-[#12141A]' : 'border-white/30'}">${h.done ? '✓' : ''}</span>
+        </button>
+      `).join('');
+      refreshIcons();
+    }
+
+    // ---------- RENDER CHAT ----------
+    function renderChat() {
+      document.getElementById('chatMessages').innerHTML = state.chat.map(m => {
+        if (m.role === 'divider') {
+          return `<div class="py-2 text-center text-xs text-white/55">${escapeHtml(m.text)}</div>`;
+        }
+        if (m.role === 'handoff_card') {
+          return `
+            <button type="button" data-open-handoff-card="${escapeHtml(m.domain)}|${escapeHtml(m.task)}|${escapeHtml(m.file || '')}" class="w-[82%] text-left obsidian-card hover:bg-black rounded-[22px] px-4 py-3.5 flex items-center gap-3.5 shadow-xl transition animate-in">
+              <i data-lucide="globe" class="w-5 h-5 text-white/60 shrink-0"></i>
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-white truncate">${escapeHtml(m.title)}</p>
+                <p class="text-xs text-white/50 truncate">${escapeHtml(m.domain)}</p>
+              </div>
+            </button>`;
+        }
+        if (m.role === 'user') {
+          return `<div class="flex justify-end animate-in"><div class="max-w-[82%] px-4 py-3 rounded-[24px] rounded-tr-md bg-[#F2F3F5] text-[#181A20] text-[14px] leading-relaxed shadow-md">${escapeHtml(m.text)}</div></div>`;
+        }
+        return `<div class="flex justify-start animate-in"><div class="max-w-[86%] px-4 py-3.5 rounded-[24px] rounded-tl-md glass-card text-[14px] leading-relaxed text-white/95 shadow-lg">${escapeHtml(m.text)}</div></div>`;
+      }).join('');
+      refreshIcons();
+    }
+
+    // ---------- RENDER PROJECTS ----------
+    function renderProjects() {
+      const listEl = document.getElementById('projectsList');
+      const detEl = document.getElementById('projectDetailView');
+      const heroEl = document.getElementById('projetosHero');
+      if (state.selectedProjectId) {
+        const p = state.projects.find(x => x.id === state.selectedProjectId);
+        heroEl.classList.add('hidden'); listEl.classList.add('hidden'); detEl.classList.remove('hidden');
+        detEl.innerHTML = `
+          <button type="button" data-proj-back="1" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full glass-pill text-xs text-white">← Projetos</button>
+          <div class="glass-card rounded-[26px] p-4 space-y-2.5">
+            <h3 class="font-serif text-2xl text-white">${escapeHtml(p.title)}</h3>
+            <p class="text-xs text-white/75">${escapeHtml(p.desc)}</p>
+            <div class="flex flex-wrap gap-1.5">${p.files.map(f => `<span class="px-2.5 py-1 rounded-xl glass-tile text-[11px] text-white/85">${escapeHtml(f)}</span>`).join('')}</div>
+          </div>
+          <div class="space-y-2">${p.messages.map(m => `<div class="px-4 py-3 rounded-[22px] text-xs ${m.role === 'user' ? 'bg-[#F2F3F5] text-[#16181E] ml-8' : 'glass-card text-white/90 mr-8'}">${escapeHtml(m.text)}</div>`).join('')}</div>
+          <form id="projectChatForm" class="glass-pill rounded-full pl-4 pr-2 py-1.5 flex items-center gap-2"><input id="projectChatInput" type="text" placeholder="Continuar neste projeto..." class="flex-1 bg-transparent text-xs text-white placeholder-white/50 focus:outline-none py-1.5" /><button type="submit" class="px-3.5 py-1.5 rounded-full bg-[#F2F3F5] text-[#16181E] text-xs font-medium">Enviar</button></form>`;
+        document.getElementById('projectChatForm').addEventListener('submit', e => {
+          e.preventDefault();
+          const v = document.getElementById('projectChatInput').value.trim(); if (!v) return;
+          p.messages.push({ role: 'user', text: v }, { role: 'assistant', text: `Salvo no projeto "${p.title}" com contexto atualizado.` });
+          renderProjects();
+        });
+        return;
+      }
+      heroEl.classList.remove('hidden'); detEl.classList.add('hidden'); listEl.classList.remove('hidden');
+      listEl.innerHTML = state.projects.map(p => `
+        <button type="button" data-open-project="${p.id}" class="w-full text-left glass-card hover:bg-[#2a2f3d]/85 rounded-[24px] p-4 space-y-1.5 transition">
+          <div class="flex items-center justify-between"><span class="font-medium text-sm text-white">${escapeHtml(p.title)}</span><i data-lucide="chevron-right" class="w-4 h-4 text-white/45"></i></div>
+          <p class="text-xs text-white/65">${escapeHtml(p.desc)}</p>
+        </button>`).join('');
+      refreshIcons();
+    }
+
+    // ---------- HANDOFF UNIVERSAL BROWSER ----------
+    function startHandoff(url, task, fileName) {
+      clearInterval(state.handoffTimer);
+      const cleanDomain = url.replace(/^https?:\/\//, '').split('/')[0];
+      const cred = state.credentials.find(c => cleanDomain.includes(c.domain) || c.domain.includes(cleanDomain));
+      state.handoff = {
+        url: url.replace(/^https?:\/\//, ''),
+        task,
+        fileName: fileName || null,
+        credUsed: cred ? `${cred.siteName} (${cred.username})` : 'Novo login (salvará no Cofre)',
+        stepIndex: 0,
+        status: 'running',
+        steps: [
+          `Abrindo ${cleanDomain} no navegador isolado...`,
+          cred ? `Injetando login do Cofre AES-256 (${cred.username})...` : 'Acessando página de login...',
+          fileName ? `Enviando arquivo "${fileName}" no formulário...` : 'Navegando em ritmo humano...',
+          'Pausado para sua aprovação final.'
+        ]
+      };
+      document.getElementById('chatPillLabel').textContent = `Handoff · ${cleanDomain}`;
+      openSubview('browser');
+      state.handoffTimer = setInterval(() => {
+        if (!state.handoff || state.handoff.status !== 'running') { clearInterval(state.handoffTimer); return; }
+        state.handoff.stepIndex += 1;
+        if (state.handoff.stepIndex >= state.handoff.steps.length - 1) {
+          state.handoff.stepIndex = state.handoff.steps.length - 1;
+          state.handoff.status = 'awaiting_approval';
+          clearInterval(state.handoffTimer);
+        }
+        if (state.currentSubview === 'browser') renderSubview();
+      }, 800);
+    }
+
+    // ---------- RENDER SUBVIEWS (Browser, Vault, Files, Panels, Memory, Autonomy) ----------
+    function renderSubview() {
+      const body = document.getElementById('subviewBody');
+      const sv = state.currentSubview;
+
+      if (sv === 'browser') {
+        const h = state.handoff;
+        const pct = h ? Math.round(((h.stepIndex + 1) / h.steps.length) * 100) : 0;
+        body.innerHTML = `
+          <div class="glass-card rounded-[28px] p-5 space-y-3">
+            <h3 class="font-serif text-2xl text-white">navegador universal</h3>
+            <p class="text-xs text-white/70">Acesse qualquer site, use logins do Cofre e envie arquivos PDF ou Word.</p>
+            <form id="subBrowserForm" class="space-y-2.5">
+              <input id="subBrowserUrl" type="text" value="${escapeHtml(h?.url || 'gupy.io')}" placeholder="Qualquer site (gupy.io, linkedin.com, catho...)" class="w-full glass-tile rounded-2xl px-3.5 py-2.5 text-xs text-white placeholder-white/40 focus:outline-none" />
+              <input id="subBrowserTask" type="text" placeholder="O que o Aura deve fazer?" class="w-full glass-tile rounded-2xl px-3.5 py-2.5 text-xs text-white placeholder-white/40 focus:outline-none" />
+              <select id="subBrowserFile" class="w-full glass-tile rounded-2xl px-3.5 py-2.5 text-xs text-white/90 focus:outline-none">
+                <option value="">Sem arquivo anexado</option>
+                ${state.files.map(f => `<option value="${escapeHtml(f.name)}">📎 ${escapeHtml(f.name)}</option>`).join('')}
+              </select>
+              <button type="submit" class="w-full py-2.5 rounded-full bg-[#F2F3F5] text-[#16181E] text-xs font-medium">Executar no Navegador</button>
+            </form>
+          </div>
+          ${h ? `
+            <div class="obsidian-card rounded-[26px] p-4 space-y-3 animate-in">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-mono text-white/80 truncate">🌐 https://${escapeHtml(h.url)}</span>
+                <button type="button" data-handoff="takeover" class="px-2.5 py-1 rounded-full bg-white/10 text-[10px] text-amber-300 shrink-0">${h.status === 'takeover' ? 'Devolver IA' : 'Assumir 2FA'}</button>
+              </div>
+              <div class="p-3 rounded-2xl bg-white/5 space-y-1 text-xs">
+                <p class="text-white font-medium">${escapeHtml(h.task)}</p>
+                <p class="text-amber-300 text-[11px]">🔐 ${escapeHtml(h.credUsed)}</p>
+                ${h.fileName ? `<p class="text-emerald-300 text-[11px]">📎 Upload: ${escapeHtml(h.fileName)}</p>` : ''}
+              </div>
+              <div class="w-full h-1.5 rounded-full bg-white/10 overflow-hidden"><div class="h-full bg-white transition-all duration-300" style="width:${pct}%"></div></div>
+              <p class="text-xs text-white/75">${h.status === 'takeover' ? '🖐️ Modo manual ativo para 2FA/CAPTCHA.' : h.status === 'completed' ? '✅ Concluído e cookies salvos.' : escapeHtml(h.steps[h.stepIndex])}</p>
+              <div class="flex gap-2">
+                ${h.status === 'awaiting_approval' ? `<button type="button" data-handoff="approve" class="flex-1 py-2.5 rounded-full bg-[#F2F3F5] text-[#16181E] text-xs font-medium">✓ Aprovar e Enviar</button><button type="button" data-handoff="cancel" class="px-4 py-2.5 rounded-full bg-white/10 text-xs text-red-300">Cancelar</button>` : `<button type="button" data-handoff="close" class="w-full py-2 rounded-full bg-white/10 text-xs text-white/80">Fechar sessão</button>`}
+              </div>
+            </div>
+          ` : ''}
+        `;
+        document.getElementById('subBrowserForm').addEventListener('submit', e => {
+          e.preventDefault();
+          const u = document.getElementById('subBrowserUrl').value.trim() || 'gupy.io';
+          const t = document.getElementById('subBrowserTask').value.trim() || `Acessar ${u}`;
+          const f = document.getElementById('subBrowserFile').value || null;
+          startHandoff(u, t, f);
+        });
+      }
+
+      if (sv === 'vault') {
+        body.innerHTML = `
+          <div class="glass-card rounded-[28px] p-5 space-y-3">
+            <div class="flex items-baseline justify-between">
+              <h3 class="font-serif text-2xl text-white">cofre de senhas</h3>
+              <span class="text-[11px] text-emerald-300">AES-256-GCM</span>
+            </div>
+            <form id="subCredForm" class="grid grid-cols-2 gap-2">
+              <input id="cSite" required placeholder="Site (ex.: Catho)" class="glass-tile rounded-xl px-3 py-2 text-xs text-white" />
+              <input id="cDom" required placeholder="catho.com.br" class="glass-tile rounded-xl px-3 py-2 text-xs text-white" />
+              <input id="cUser" required placeholder="E-mail / login" class="glass-tile rounded-xl px-3 py-2 text-xs text-white" />
+              <input id="cPass" required type="password" placeholder="Senha" class="glass-tile rounded-xl px-3 py-2 text-xs text-white" />
+              <button type="submit" class="col-span-2 py-2.5 rounded-full bg-[#F2F3F5] text-[#16181E] text-xs font-medium">Salvar no Cofre</button>
+            </form>
+            <div class="space-y-2 pt-1">
+              ${state.credentials.map(c => `
+                <div class="glass-tile rounded-2xl p-3 flex items-center justify-between text-xs">
+                  <div class="min-w-0">
+                    <p class="font-medium text-white">${escapeHtml(c.siteName)} <span class="text-white/45">(${escapeHtml(c.domain)})</span></p>
+                    <p class="text-[11px] text-white/60 truncate">${escapeHtml(c.username)} · ${state.revealedCredId === c.id ? escapeHtml(c.pass) : '••••••••'}</p>
+                  </div>
+                  <div class="flex gap-1.5">
+                    <button type="button" data-reveal-cred="${c.id}" class="px-2.5 py-1 rounded-full bg-white/10 text-[10px] text-white">${state.revealedCredId === c.id ? 'Ocultar' : 'Ver'}</button>
+                    <button type="button" data-del-cred="${c.id}" class="px-2 py-1 text-white/40 hover:text-red-300">✕</button>
+                  </div>
+                </div>`).join('')}
+            </div>
+          </div>`;
+        document.getElementById('subCredForm').addEventListener('submit', e => {
+          e.preventDefault();
+          state.credentials.unshift({ id: 'cr'+Date.now(), siteName: document.getElementById('cSite').value.trim(), domain: document.getElementById('cDom').value.trim(), username: document.getElementById('cUser').value.trim(), pass: document.getElementById('cPass').value.trim() });
+          renderSubview(); showToast('Login salvo no Cofre AES-256');
+        });
+      }
+
+      if (sv === 'files') {
+        body.innerHTML = `
+          <div class="glass-card rounded-[28px] p-5 space-y-3">
+            <h3 class="font-serif text-2xl text-white">arquivos & currículo</h3>
+            <form id="subCvForm" class="space-y-2">
+              <div class="flex gap-2">
+                <input id="subCvRole" required placeholder="Adaptar CV para vaga (ex.: Produto)" class="flex-1 glass-tile rounded-xl px-3 py-2 text-xs text-white" />
+                <select id="subCvExt" class="glass-tile rounded-xl px-2.5 py-2 text-xs text-white"><option value="pdf">.PDF</option><option value="docx">.DOCX</option></select>
+              </div>
+              <button type="submit" class="w-full py-2.5 rounded-full bg-[#F2F3F5] text-[#16181E] text-xs font-medium">Atualizar Currículo com IA</button>
+            </form>
+            <label class="w-full py-2.5 rounded-full glass-tile hover:bg-white/10 text-xs text-white/90 flex items-center justify-center gap-2 cursor-pointer">
+              <i data-lucide="upload" class="w-3.5 h-3.5"></i> Subir PDF, Word (.docx) ou outro arquivo
+              <input id="subFileUpload" type="file" accept=".pdf,.doc,.docx,.txt,.csv,.png,.jpg,.zip" class="hidden" />
+            </label>
+            <div class="space-y-2">
+              ${state.files.map(f => `
+                <div class="glass-tile rounded-2xl p-3 flex items-center justify-between text-xs">
+                  <div class="min-w-0"><p class="font-medium text-white truncate">${escapeHtml(f.name)}</p><p class="text-[10px] text-white/55">${f.ext.toUpperCase()} · ${escapeHtml(f.size)}</p></div>
+                  <div class="flex gap-1.5">
+                    <button type="button" data-send-file="${escapeHtml(f.name)}" class="px-2.5 py-1 rounded-full bg-white/15 text-[10px] text-white">Enviar</button>
+                    <button type="button" data-del-file="${f.id}" class="px-1.5 text-white/40 hover:text-red-300">✕</button>
+                  </div>
+                </div>`).join('')}
+            </div>
+          </div>`;
+        document.getElementById('subCvForm').addEventListener('submit', e => {
+          e.preventDefault();
+          const role = document.getElementById('subCvRole').value.trim();
+          const ext = document.getElementById('subCvExt').value;
+          const name = `CV_${role.replace(/[^a-zA-Z0-9]+/g,'_').slice(0,18)}_2026.${ext}`;
+          state.files.unshift({ id: 'f'+Date.now(), name, ext, size: ext === 'pdf' ? '254 KB' : '116 KB', version: state.files.length + 1 });
+          renderSubview(); showToast(`"${name}" gerado!`);
+        });
+        document.getElementById('subFileUpload').addEventListener('change', e => {
+          const f = e.target.files?.[0]; if (!f) return;
+          state.files.unshift({ id: 'f'+Date.now(), name: f.name, ext: f.name.split('.').pop() || 'file', size: `${Math.max(1, Math.round(f.size/1024))} KB`, version: 1 });
+          renderSubview(); showToast(`"${f.name}" salvo!`);
+        });
+      }
+
+      if (sv === 'panels') {
+        const total = state.panels.expenses.reduce((s, x) => s + x.amount, 0);
+        body.innerHTML = `
+          <div class="glass-card rounded-[28px] p-5 space-y-3">
+            <h3 class="font-serif text-2xl text-white">meus painéis</h3>
+            <form id="subPanelForm" class="flex gap-2">
+              <input id="subPanelPrompt" required placeholder="Criar novo painel (ex.: Pomodoro)" class="flex-1 glass-tile rounded-xl px-3 py-2 text-xs text-white" />
+              <button type="submit" class="px-4 py-2 rounded-full bg-[#F2F3F5] text-[#16181E] text-xs font-medium">Criar</button>
+            </form>
+            <div class="glass-tile rounded-2xl p-3.5 space-y-2">
+              <div class="flex justify-between text-xs"><span class="text-white font-medium">Timer Pomodoro</span><span class="pomodoro-clock font-mono text-white">${formatSec(state.pomodoro.seconds)}</span></div>
+              <div class="flex gap-2">
+                <button type="button" data-pomo="toggle" class="flex-1 py-1.5 rounded-full bg-[#F2F3F5] text-[#16181E] text-xs font-medium">${state.pomodoro.running ? 'Pausar' : 'Iniciar'}</button>
+                <button type="button" data-pomo="reset" class="px-3.5 py-1.5 rounded-full bg-white/10 text-xs text-white">Resetar</button>
+              </div>
+            </div>
+            <div class="glass-tile rounded-2xl p-3.5 space-y-2">
+              <div class="flex justify-between text-xs"><span class="text-white font-medium">Gastos da Semana</span><span class="text-emerald-300">R$ ${total.toFixed(2).replace('.', ',')}</span></div>
+              ${state.panels.expenses.map(ex => `<div class="flex justify-between text-xs text-white/80"><span>${escapeHtml(ex.title)}</span><span>R$ ${ex.amount.toFixed(2).replace('.', ',')}</span></div>`).join('')}
+            </div>
+            ${state.panels.customPanels.map(cp => `<div class="glass-tile rounded-2xl p-3.5 text-xs text-white">✨ Painel · ${escapeHtml(cp.title)}</div>`).join('')}
+          </div>`;
+        document.getElementById('subPanelForm').addEventListener('submit', e => {
+          e.preventDefault();
+          const t = document.getElementById('subPanelPrompt').value.trim(); if (!t) return;
+          state.panels.customPanels.unshift({ id: 'cp'+Date.now(), title: t });
+          renderSubview(); showToast(`Painel "${t}" criado!`);
+        });
+      }
+
+      if (sv === 'memory') {
+        body.innerHTML = `
+          <div class="glass-card rounded-[28px] p-5 space-y-3">
+            <h3 class="font-serif text-2xl text-white">memória longa</h3>
+            <form id="subMemForm" class="flex gap-2">
+              <input id="subMemInput" required placeholder="Adicionar fato permanente..." class="flex-1 glass-tile rounded-xl px-3 py-2 text-xs text-white" />
+              <button type="submit" class="px-4 py-2 rounded-full bg-[#F2F3F5] text-[#16181E] text-xs font-medium">Salvar</button>
+            </form>
+            <div class="space-y-2">
+              ${state.memories.map(m => `<div class="glass-tile rounded-2xl p-3 flex justify-between gap-2 text-xs"><div><span class="text-[10px] text-white/50 block">${escapeHtml(m.tag)}</span><span class="text-white/90">${escapeHtml(m.text)}</span></div><button type="button" data-del-mem="${m.id}" class="text-white/40 hover:text-red-300">✕</button></div>`).join('')}
+            </div>
+          </div>`;
+        document.getElementById('subMemForm').addEventListener('submit', e => {
+          e.preventDefault();
+          const v = document.getElementById('subMemInput').value.trim(); if (!v) return;
+          state.memories.unshift({ id: 'm'+Date.now(), tag: 'Manual', text: v });
+          renderSubview(); showToast('Memória salva');
+        });
+      }
+
+      if (sv === 'autonomy') {
+        body.innerHTML = `
+          <div class="glass-card rounded-[28px] p-5 space-y-3">
+            <h3 class="font-serif text-2xl text-white">segurança & autonomia</h3>
+            <p class="text-xs text-white/70">Defina o que o Aura executa sozinho e o que exige sua aprovação.</p>
+            <div class="space-y-2">
+              ${state.autonomy.map(a => `
+                <button type="button" data-toggle-auto="${a.id}" class="w-full glass-tile rounded-2xl p-3.5 flex items-center justify-between text-left text-xs">
+                  <span class="text-white/90 pr-3">${escapeHtml(a.label)}</span>
+                  <span class="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-medium ${a.auto ? 'bg-emerald-400/20 text-emerald-300' : 'bg-amber-400/20 text-amber-300'}">${a.auto ? 'Automático' : 'Pedir aprovação'}</span>
+                </button>`).join('')}
+            </div>
+          </div>`;
+      }
+
+      refreshIcons();
+    }
+
+    // ---------- HANDLE CHAT INPUT ----------
+    function handleChatSubmit(raw) {
+      const text = raw.trim(); if (!text) return;
+      if (state.activeTab !== 'chat') setActiveTab('chat');
+      state.chat.push({ id: 'u'+Date.now(), role: 'user', text });
+      const lower = text.toLowerCase();
+      if (lower.includes('gupy') || lower.includes('linkedin') || lower.includes('site') || lower.includes('acess')) {
+        const domain = lower.includes('linkedin') ? 'linkedin.com' : 'gupy.io';
+        state.chat.push({ id: 'a'+Date.now(), role: 'assistant', text: `Abri ${domain} no Navegador Universal usando seu login do Cofre. Toque no cartão abaixo para acompanhar ao vivo e aprovar antes do envio.` });
+        state.chat.push({ id: 'hc'+Date.now(), role: 'handoff_card', title: `Sessão · ${domain}`, domain, task: text, file: lower.includes('pdf') || lower.includes('cv') ? state.files[0]?.name : null });
+      } else if (lower.includes('atualiz') && (lower.includes('curr') || lower.includes('cv'))) {
+        const ext = lower.includes('word') || lower.includes('docx') ? 'docx' : 'pdf';
+        const name = `CV_Atualizado_2026.${ext}`;
+        state.files.unshift({ id: 'f'+Date.now(), name, ext, size: '240 KB', version: state.files.length + 1 });
+        state.chat.push({ id: 'a'+Date.now(), role: 'assistant', text: `Pronto! Gere e salvei "${name}" no seu Cofre de Arquivos. Quer que eu já anexe em alguma vaga?` });
+      } else {
+        state.chat.push({ id: 'a'+Date.now(), role: 'assistant', text: 'Perfeito! Considerei suas memórias salvas. Se quiser, posso executar isso em qualquer site pelo Navegador ou criar um novo painel.' });
+      }
+      renderChat();
+      const vp = document.getElementById('mainViewport');
+      setTimeout(() => { vp.scrollTop = vp.scrollHeight; }, 40);
+    }
+
+    // ---------- EVENTS ----------
+    document.querySelectorAll('.top-tab').forEach(b => b.addEventListener('click', () => setActiveTab(b.dataset.tab)));
+    document.getElementById('btnAvatarMenu').addEventListener('click', () => setActiveTab(state.activeTab === 'menu' ? 'inicio' : 'menu'));
+    document.getElementById('btnBackFromSubview').addEventListener('click', () => setActiveTab('menu'));
+    document.getElementById('btnTopLeft').addEventListener('click', () => {
+      if (state.activeTab === 'projetos') document.getElementById('projectModal').classList.remove('hidden');
+      else document.getElementById('quickSheet').classList.remove('hidden');
+    });
+    document.getElementById('btnQuickAttach').addEventListener('click', () => document.getElementById('quickSheet').classList.remove('hidden'));
+    document.getElementById('btnCloseQuickSheet').addEventListener('click', () => document.getElementById('quickSheet').classList.add('hidden'));
+    document.querySelectorAll('[data-quick-action]').forEach(b => b.addEventListener('click', () => {
+      document.getElementById('quickSheet').classList.add('hidden');
+      openSubview(b.dataset.quickAction);
+    }));
+
+    document.getElementById('btnConnectGoogle').addEventListener('click', () => {
+      state.googleConnected = !state.googleConnected;
+      document.getElementById('connectGoogleLabel').textContent = state.googleConnected ? 'Google & Cofre conectados ✓' : 'Conectar Google & Cofre';
+      showToast(state.googleConnected ? 'Gmail, Agenda e Cofre conectados!' : 'Conexão pausada');
+    });
+
+    document.getElementById('btnOpenPanelsSheet').addEventListener('click', () => openSubview('panels'));
+    document.getElementById('btnNewPanelPrompt').addEventListener('click', () => openSubview('panels'));
+    document.getElementById('btnOpenActiveBrowser').addEventListener('click', () => startHandoff('gupy.io/candidatura', 'Fazer login pelo Cofre e enviar Curriculo_Principal_2026.pdf', state.files[0]?.name));
+    document.getElementById('btnInlineNewProject').addEventListener('click', () => document.getElementById('projectModal').classList.remove('hidden'));
+
+    document.getElementById('chatForm').addEventListener('submit', e => {
+      e.preventDefault();
+      const inp = document.getElementById('chatInput');
+      handleChatSubmit(inp.value);
+      inp.value = '';
+    });
+
+    document.getElementById('btnVoiceOpen').addEventListener('click', () => document.getElementById('voiceOverlay').classList.remove('hidden'));
+    document.getElementById('btnVoiceClose').addEventListener('click', () => document.getElementById('voiceOverlay').classList.add('hidden'));
+    document.getElementById('btnVoiceCancel').addEventListener('click', () => document.getElementById('voiceOverlay').classList.add('hidden'));
+    document.querySelectorAll('[data-voice-sample]').forEach(b => b.addEventListener('click', () => {
+      document.getElementById('voiceOverlay').classList.add('hidden');
+      handleChatSubmit(b.dataset.voiceSample);
+    }));
+
+    document.getElementById('btnCloseProjectModal').addEventListener('click', () => document.getElementById('projectModal').classList.add('hidden'));
+    document.getElementById('btnCancelProject').addEventListener('click', () => document.getElementById('projectModal').classList.add('hidden'));
+    document.getElementById('newProjectForm').addEventListener('submit', e => {
+      e.preventDefault();
+      const t = document.getElementById('projTitleInput').value.trim();
+      const d = document.getElementById('projDescInput').value.trim();
+      state.projects.unshift({ id: 'p'+Date.now(), title: t, desc: d, files: ['briefing.md'], messages: [{ role: 'assistant', text: `Projeto "${t}" iniciado!` }] });
+      e.target.reset();
+      document.getElementById('projectModal').classList.add('hidden');
+      setActiveTab('projetos');
+      showToast('Projeto criado!');
+    });
+
+    // Delegated clicks
+    document.getElementById('appShell').addEventListener('click', e => {
+      const btn = e.target.closest('button'); if (!btn) return;
+      if (btn.dataset.openSubview) { openSubview(btn.dataset.openSubview); return; }
+      if (btn.dataset.runProactive) {
+        const c = state.proactiveCards.find(x => x.id === btn.dataset.runProactive);
+        if (c) startHandoff(c.url, `${c.verb}: ${c.text}`, c.file);
+        return;
+      }
+      if (btn.dataset.openHandoffCard) {
+        const [dom, tsk, fl] = btn.dataset.openHandoffCard.split('|');
+        startHandoff(dom, tsk, fl || null);
+        return;
+      }
+      if (btn.dataset.water) {
+        state.panels.waterMl = Math.max(0, state.panels.waterMl + parseInt(btn.dataset.water, 10));
+        renderInicio(); return;
+      }
+      if (btn.dataset.toggleHabit) {
+        const h = state.panels.habits.find(x => x.id === btn.dataset.toggleHabit);
+        if (h) h.done = !h.done;
+        renderInicio(); return;
+      }
+      if (btn.dataset.openProject) { state.selectedProjectId = btn.dataset.openProject; renderProjects(); return; }
+      if (btn.dataset.projBack) { state.selectedProjectId = null; renderProjects(); return; }
+      if (btn.dataset.handoff) {
+        if (btn.dataset.handoff === 'approve' && state.handoff) { state.handoff.status = 'completed'; renderSubview(); showToast('Ação aprovada e concluída!'); }
+        else if (btn.dataset.handoff === 'takeover' && state.handoff) { state.handoff.status = state.handoff.status === 'takeover' ? 'awaiting_approval' : 'takeover'; renderSubview(); }
+        else { clearInterval(state.handoffTimer); state.handoff = null; renderSubview(); }
+        return;
+      }
+      if (btn.dataset.revealCred) { state.revealedCredId = state.revealedCredId === btn.dataset.revealCred ? null : btn.dataset.revealCred; renderSubview(); return; }
+      if (btn.dataset.delCred) { state.credentials = state.credentials.filter(x => x.id !== btn.dataset.delCred); renderSubview(); return; }
+      if (btn.dataset.sendFile) { startHandoff('gupy.io/upload', `Anexar arquivo ${btn.dataset.sendFile}`, btn.dataset.sendFile); return; }
+      if (btn.dataset.delFile) { state.files = state.files.filter(x => x.id !== btn.dataset.delFile); renderSubview(); return; }
+      if (btn.dataset.delMem) { state.memories = state.memories.filter(x => x.id !== btn.dataset.delMem); renderSubview(); return; }
+      if (btn.dataset.toggleAuto) { const a = state.autonomy.find(x => x.id === btn.dataset.toggleAuto); if (a) a.auto = !a.auto; renderSubview(); return; }
+      if (btn.dataset.pomo) {
+        if (btn.dataset.pomo === 'toggle') {
+          state.pomodoro.running = !state.pomodoro.running; clearInterval(state.pomodoro.interval);
+          if (state.pomodoro.running) state.pomodoro.interval = setInterval(() => { if (state.pomodoro.seconds > 0) { state.pomodoro.seconds -= 1; document.querySelectorAll('.pomodoro-clock').forEach(el => el.textContent = formatSec(state.pomodoro.seconds)); } }, 1000);
+        } else { clearInterval(state.pomodoro.interval); state.pomodoro.running = false; state.pomodoro.seconds = 25 * 60; }
+        renderSubview();
+      }
+    });
+
+    // Init
+    setActiveTab('inicio');
+  </script>
+</body>
+</html>
