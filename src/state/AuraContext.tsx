@@ -70,7 +70,8 @@ export interface AuraCtx {
   toggleAutonomy: (id: string) => void;
 
   handoff: HandoffState | null;
-  startHandoff: (url: string, task: string, fileName?: string | null, focus?: boolean, opts?: { loginMode?: boolean }) => Promise<void>;
+  startHandoff: (url: string, task: string, fileName?: string | null, focus?: boolean, opts?: { connect?: boolean }) => Promise<void>;
+  submitLogin: (sessionId: string, c: { username: string; password: string; remember: boolean; domain: string }) => Promise<boolean>;
   finishHandoff: () => Promise<void>;
   requestFinish: () => void;
   vaultSheet: null | 'manual' | 'finish';
@@ -211,7 +212,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setHandoff((h) => (h ? { ...h, ...patch } : h));
   }, []);
 
-  const startHandoff = useCallback(async (url: string, task: string, fileName?: string | null, focus = true, opts: { loginMode?: boolean } = {}) => {
+  const startHandoff = useCallback(async (url: string, task: string, fileName?: string | null, focus = true, opts: { connect?: boolean } = {}) => {
     window.clearInterval(timerRef.current);
     const domain = cleanDomain(url);
     const cred = credentials.find((c) => domain.includes(c.domain.toLowerCase()) || c.domain.toLowerCase().includes(domain));
@@ -219,24 +220,24 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const rule = (k: string) => autonomyMap[k] ?? DEFAULT_AUTONOMY[k];
 
     // Regras de autonomia: o que está em "Pedir aprovação" exige confirmação ANTES de executar.
-    const loginMode = Boolean(opts.loginMode);
-    let useVault = Boolean(cred) && !loginMode;
-    if (cred && !loginMode && !rule('login_sites')) {
+    const connect = Boolean(opts.connect);
+    let useVault = Boolean(cred);
+    if (cred && !rule('login_sites')) {
       useVault = window.confirm(`Usar o login salvo de ${cred.siteName} (${cred.username}) neste site?`);
     }
-    let uploadFiles = Boolean(file) && !loginMode;
-    if (file && !loginMode && !rule('upload_files_forms')) {
+    let uploadFiles = Boolean(file);
+    if (file && !rule('upload_files_forms')) {
       uploadFiles = window.confirm(`Anexar "${file.name}" nos formulários deste site?`);
     }
-    const requireApproval = loginMode || !(rule('send_messages_apply') && rule('payments'));
+    const requireApproval = !connect && !(rule('send_messages_apply') && rule('payments'));
 
     const credUsed = cred && useVault ? `${cred.siteName} (${cred.username})` : 'Sem login do Cofre (usa cookies do perfil)';
     const base: HandoffState = {
       id: uuid(), remote, url: url.replace(/^https?:\/\//i, ''), task,
       fileName: file && uploadFiles ? file.name : null, fileId: file && uploadFiles ? file.id : null,
-      credUsed: loginMode ? 'Você fará o login; ele fica guardado no perfil' : credUsed,
-      status: 'running', stepIndex: 0, liveUrl: null, requireApproval, loginMode, ready: !remote,
-      steps: loginMode ? [`Abrindo ${domain} no navegador isolado…`, 'Pronto: toque em "Tomar controle" e faça o seu login.'] : [
+      credUsed,
+      status: 'running', stepIndex: 0, liveUrl: null, requireApproval, ready: !remote,
+      steps: [
         `Abrindo ${domain} no navegador isolado…`,
         useVault ? 'Injetando login do Cofre AES-256 (a senha não passa pela IA)…' : 'Navegando com o perfil persistente…',
         file && uploadFiles ? `Preparando upload de "${file.name}"…` : 'Navegando em ritmo humano…',
@@ -248,7 +249,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (remote) {
       const res = await api.handoff.start({
-        task, targetUrl: url, fileId: base.fileId, useVault, requireApproval, uploadFiles, loginMode
+        task, targetUrl: url, fileId: base.fileId, useVault, requireApproval, uploadFiles, connect
       });
       if (!res) {
         const why = explainError(lastFunctionError.message) || 'Confira a chave do Browser Use.';
@@ -275,8 +276,6 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Polling do backend enquanto a sessão remota está rodando
   const reportedRef = useRef<Set<string>>(new Set());
-  const autoTakeRef = useRef<Set<string>>(new Set());
-  const takeoverRef = useRef<() => Promise<void>>();
   const hId = handoff?.id;
   const hStatus = handoff?.status;
   const hRemote = handoff?.remote;
@@ -295,16 +294,24 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ...h, liveUrl: r.liveUrl || h.liveUrl,
           steps: r.steps.length ? r.steps : h.steps,
           stepIndex: r.steps.length ? r.steps.length - 1 : h.stepIndex,
-          status: r.status, error: r.error || undefined
+          status: r.status, error: r.error || undefined, loginDomain: r.loginDomain || h.loginDomain
         };
       });
-      if (handoffRef.current?.loginMode && (r.status === 'awaiting_approval' || r.status === 'completed') && !autoTakeRef.current.has(hId)) {
-        // "Guardar login": a IA só abriu o site; agora é você. Entra direto em "Tomar controle" + tela cheia.
-        autoTakeRef.current.add(hId);
-        void takeoverRef.current?.();
+      // A IA parou pedindo algo ao usuário: login -> cofre no chat; 2FA/CAPTCHA -> tomar controle.
+      if (r.status === 'needs_login' || r.status === 'needs_manual') {
+        const k = `${hId}:${r.status}`;
+        if (!reportedRef.current.has(k)) {
+          reportedRef.current.add(k);
+          const dom = r.loginDomain || (handoffRef.current?.url ?? '').split('/')[0];
+          setChat((p) => [...p, r.status === 'needs_login'
+            ? { id: uuid(), role: 'login_request', domain: dom, sessionId: hId }
+            : { id: uuid(), role: 'manual_request', sessionId: hId }]);
+          void success();
+          void notifyLocal(r.status === 'needs_login' ? 'O Aura precisa do seu login' : 'O Aura precisa da sua ajuda', r.status === 'needs_login' ? `Informe o login de ${dom} no chat.` : 'O site pediu uma verificação manual.');
+        }
         return;
       }
-      if (!handoffRef.current?.loginMode && (r.status === 'awaiting_approval' || r.status === 'completed' || r.status === 'failed')) {
+      if (r.status === 'awaiting_approval' || r.status === 'completed' || r.status === 'failed') {
         const k = `${hId}:${r.status}`;
         if (!reportedRef.current.has(k)) {
           reportedRef.current.add(k);
@@ -316,7 +323,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
           void api.data.chatAppend(text); // entra no histórico: a IA lembra do resultado nas próximas mensagens
         }
       }
-      if (r.status === 'awaiting_approval' && !handoffRef.current?.loginMode) {
+      if (r.status === 'awaiting_approval') {
         void success();
         void notifyLocal('Aura precisa da sua aprovação', 'O navegador parou antes do envio final.');
       }
@@ -362,8 +369,6 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [patchHandoff, showToast]);
 
-  takeoverRef.current = toggleTakeover;
-
   const finishHandoff = useCallback(async () => {
     const h = handoffRef.current;
     if (!h) return;
@@ -383,11 +388,27 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!h) return;
     const domain = cleanDomain(h.url);
     const has = credentials.some((c) => domain.includes(c.domain.toLowerCase()) || c.domain.toLowerCase().includes(domain));
-    if (h.loginMode && !has) setVaultSheet('finish');
+    if (!has) setVaultSheet('finish');
     else void finishHandoff();
   }, [credentials, finishHandoff]);
   const openVaultSheet = useCallback((mode: 'manual' | 'finish') => setVaultSheet(mode), []);
   const closeVaultSheet = useCallback(() => setVaultSheet(null), []);
+
+  /** Cofre do chat: envia o login ao servidor (que digita no site sem a IA ver) e a tarefa continua. */
+  const submitLogin = useCallback(async (sessionId: string, c: { username: string; password: string; remember: boolean; domain: string }) => {
+    const h = handoffRef.current;
+    if (!h || h.id !== sessionId) { showToast('Esta sessão já foi encerrada'); return false; }
+    if (h.remote) {
+      const r = await api.handoff.provideLogin({ id: h.id, ...c });
+      if (!r) { showToast('Não consegui enviar o login'); return false; }
+    }
+    reportedRef.current.delete(`${h.id}:needs_login`); // se o login falhar, o cartão aparece de novo
+    patchHandoff({ status: 'running', steps: [...h.steps, 'Login enviado: entrando no site…'] });
+    setChat((p) => p.map((m) => (m.role === 'login_request' && m.sessionId === sessionId ? { ...m, done: true } : m)));
+    if (remote && c.remember) void api.vault.list().then((l) => { if (l) setCredentials(l); });
+    void success();
+    return true;
+  }, [patchHandoff, showToast]);
 
   const closeHandoff = useCallback(async () => {
     const h = handoffRef.current;
@@ -599,7 +620,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     files, uploadFile, deleteFile, tailorCv, cvBase, setCvBase,
     panels, updatePanel, createPanel, deletePanel,
     autonomy, toggleAutonomy,
-    handoff, startHandoff, finishHandoff, requestFinish, vaultSheet, openVaultSheet, closeVaultSheet, approveHandoff, toggleTakeover, closeHandoff, liveFullscreen, setLiveFullscreen
+    handoff, startHandoff, submitLogin, finishHandoff, requestFinish, vaultSheet, openVaultSheet, closeVaultSheet, approveHandoff, toggleTakeover, closeHandoff, liveFullscreen, setLiveFullscreen
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };

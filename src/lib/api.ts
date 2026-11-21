@@ -158,15 +158,18 @@ export interface HandoffStatusResult {
   steps: string[];
   result?: string | null;
   error?: string | null;
+  loginDomain?: string | null;
 }
 
 export const handoff = {
-  start: (p: { task: string; targetUrl: string; fileId?: string | null; useVault: boolean; requireApproval: boolean; uploadFiles: boolean; loginMode?: boolean }) =>
+  start: (p: { task: string; targetUrl: string; fileId?: string | null; useVault: boolean; requireApproval: boolean; uploadFiles: boolean; connect?: boolean }) =>
     callFunction<HandoffStart>('handoff-browser', { action: 'start', ...p }),
   status: (id: string) => callFunction<HandoffStatusResult>('handoff-browser', { action: 'status', id }),
   approve: (id: string) => callFunction<{ ok: boolean }>('handoff-browser', { action: 'approve', id }),
   takeover: (id: string) => callFunction<{ ok: boolean; liveUrl: string | null }>('handoff-browser', { action: 'takeover', id }),
   resume: (id: string) => callFunction<{ ok: boolean }>('handoff-browser', { action: 'resume', id }),
+  provideLogin: (p: { id: string; username: string; password: string; remember: boolean; domain: string }) =>
+    callFunction<{ ok: boolean }>('handoff-browser', { action: 'provide_login', ...p }),
   finish: (id: string) => callFunction<{ ok: boolean }>('handoff-browser', { action: 'finish', id }),
   cancel: (id: string) => callFunction<{ ok: boolean }>('handoff-browser', { action: 'cancel', id })
 };

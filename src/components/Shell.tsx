@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Mic, X, Globe, FileUp, KeyRound, Sparkles, ArrowUp, Minimize2, Hand, Check, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { LoginForm } from './LoginForm';
 import { AutoTextarea } from './AutoTextarea';
 import { useAura } from '../state/AuraContext';
 import type { TabId, SubviewId } from '../types/aura';
@@ -197,7 +198,7 @@ export const Toast: React.FC = () => {
 
 /** Live View em tela cheia, com "Tomar controle" / "Devolver à IA" sempre à mão. */
 export const LiveViewOverlay: React.FC = () => {
-  const { handoff: h, liveFullscreen, setLiveFullscreen, approveHandoff, toggleTakeover, closeHandoff, requestFinish, openVaultSheet } = useAura();
+  const { handoff: h, liveFullscreen, setLiveFullscreen, approveHandoff, toggleTakeover, closeHandoff, requestFinish, openVaultSheet, submitLogin } = useAura();
   const [busy, setBusy] = useState(false);
   if (!liveFullscreen || !h) return null;
 
@@ -205,6 +206,8 @@ export const LiveViewOverlay: React.FC = () => {
   const finished = h.status === 'completed' || h.status === 'failed' || h.status === 'cancelled';
   const chip =
     mine ? { t: '✋ Você está no controle', c: 'bg-amber-400/20 text-amber-200 border-amber-300/30' }
+    : h.status === 'needs_login' ? { t: '🔐 Precisa do seu login', c: 'bg-amber-400/20 text-amber-200 border-amber-300/30' }
+    : h.status === 'needs_manual' ? { t: '✋ Precisa de verificação manual', c: 'bg-amber-400/20 text-amber-200 border-amber-300/30' }
     : h.status === 'awaiting_approval' ? { t: '⏸ Aguardando sua aprovação', c: 'bg-sky-400/20 text-sky-200 border-sky-300/30' }
     : h.status === 'completed' ? { t: '✅ Concluído', c: 'bg-emerald-400/20 text-emerald-200 border-emerald-300/30' }
     : h.status === 'failed' ? { t: '⚠️ Falhou', c: 'bg-red-400/20 text-red-200 border-red-300/30' }
@@ -241,28 +244,27 @@ export const LiveViewOverlay: React.FC = () => {
       </div>
 
       <div className="shrink-0 px-3 pt-2.5 bg-[#0E1014] space-y-2" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-        {mine && !h.loginMode && (
+        {mine && (
           <button type="button" onClick={() => requestFinish()} className="w-full text-[11px] text-white/70 underline underline-offset-2">Guardar este login e encerrar a sessão</button>
         )}
         {mine && (
           <p className="text-[11px] text-amber-200/90 text-center">
-            {h.loginMode ? 'Faça o login no site. Quando terminar, toque em "Guardar login e fechar".' : 'A IA está pausada. Faça login, 2FA ou CAPTCHA e toque em "Devolver à IA".'}
+            A IA está pausada. Faça a verificação (2FA, CAPTCHA) e toque em "Devolver à IA".
           </p>
         )}
-        <div className="flex gap-2">
+        {h.status === 'needs_login' && (
+          <div className="max-h-[60vh] overflow-y-auto no-scrollbar">
+            <LoginForm domain={h.loginDomain || h.url.split('/')[0]} onSubmit={(c) => submitLogin(h.id, c)} onManual={() => void swap()} />
+          </div>
+        )}
+        <div className={`flex gap-2 ${h.status === 'needs_login' ? 'hidden' : ''}`}>
           {finished ? (
             <button type="button" onClick={() => void closeHandoff()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium">Fechar sessão</button>
           ) : mine ? (
             <>
-              {h.loginMode ? (
-                <button type="button" onClick={() => requestFinish()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium inline-flex items-center justify-center gap-2">
-                  <Check className="w-4 h-4" /> Guardar login e fechar
-                </button>
-              ) : (
-                <button type="button" disabled={busy} onClick={() => void swap()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium inline-flex items-center justify-center gap-2 disabled:opacity-60">
-                  <Check className="w-4 h-4" /> Devolver à IA
-                </button>
-              )}
+              <button type="button" disabled={busy} onClick={() => void swap()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium inline-flex items-center justify-center gap-2 disabled:opacity-60">
+                <Check className="w-4 h-4" /> Devolver à IA
+              </button>
               <button type="button" onClick={() => void closeHandoff()} className="px-4 rounded-full bg-white/10 text-sm text-red-300">Cancelar</button>
             </>
           ) : h.status === 'awaiting_approval' ? (

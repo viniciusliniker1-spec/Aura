@@ -1,5 +1,5 @@
 import { admin, handle, json, cleanDomain } from '../_shared/common.ts';
-import { decryptSecret } from '../_shared/crypto.ts';
+import { decryptSecret, encryptSecret } from '../_shared/crypto.ts';
 
 // Browser Use Cloud — API v4 (https://docs.browser-use.com/cloud/api-v4-overview)
 const BU = 'https://api.browser-use.com/api/v4';
@@ -81,12 +81,21 @@ async function secretBindingsFor(db: ReturnType<typeof admin>, credentialId: str
   };
 }
 
-const SAFETY = `REGRAS: navegue em ritmo humano; salve a sessão no perfil após login; NUNCA peça nem escreva senhas no chat; se aparecer 2FA/CAPTCHA, pare e descreva o que falta para o usuário assumir o controle.`;
+/** secretBindings com valores informados na hora (quando o usuário não quer guardar no Cofre). */
+function inlineBindings(username: string, password: string, domain: string) {
+  const allowedDomains = [cleanDomain(domain)];
+  return [
+    { alias: 'site-username', source: { type: 'inline', value: username }, allowedDomains },
+    { alias: 'site-password', source: { type: 'inline', value: password }, allowedDomains }
+  ];
+}
+
+const SAFETY = `REGRAS: navegue em ritmo humano; salve a sessão no perfil após login; NUNCA peça nem escreva senhas no chat; se aparecer 2FA/CAPTCHA/verificação humana, PARE e termine a resposta com exatamente [[AJUDA_MANUAL]] seguido de uma frase dizendo o que aparece.`;
 
 function buildTask(o: { task: string; targetUrl: string; hasLogin: boolean; files: { fileName: string; signedUrl: string }[]; requireApproval: boolean }) {
   const login = o.hasLogin
     ? 'Se o site pedir login, use os segredos "site-username" e "site-password" (digite-os pelos apelidos).'
-    : 'Use os cookies já salvos no perfil persistente; se pedir login, pare e avise.';
+    : 'Use os cookies já salvos no perfil persistente. Se o site pedir login e você NÃO tem segredos: PARE ali e termine a resposta com exatamente [[LOGIN_NECESSARIO: dominio.com]] (o domínio real do site). Nunca invente credenciais nem peça a senha no texto.';
   const files = o.files.length
     ? `Arquivos autorizados (baixe e anexe no formulário quando solicitado): ${o.files.map((f) => `${f.fileName} -> ${f.signedUrl}`).join(' ; ')}.`
     : '';
@@ -123,14 +132,14 @@ Deno.serve(handle(async (b) => {
   /* ------------------------------ START ------------------------------ */
   if (b.action === 'start') {
     const targetUrl = String(b.targetUrl || '').slice(0, 300);
-    const loginMode = b.loginMode === true;
-    // loginMode: só abre o site e para na tela de login; quem entra é você (Tomar controle) e o login fica no perfil.
-    const task = loginMode
-      ? `Abra ${targetUrl} e pare na tela de login (ou na página inicial). NÃO faça login nem preencha nada. Termine agora.`
+    // connect: só abre o site para conferir o login. Se pedir login, o app mostra o cofre no chat.
+    const connect = b.connect === true;
+    const task = connect
+      ? 'Confirme se já está logado neste site. Se estiver, diga isso e termine. Se pedir login, siga a regra de login. Não faça mais nada.'
       : String(b.task || '').slice(0, 800);
     if (!task || !targetUrl) return json({ error: 'task e targetUrl são obrigatórios' }, 400);
     const domain = cleanDomain(targetUrl);
-    const requireApproval = loginMode ? true : b.requireApproval !== false;
+    const requireApproval = connect ? false : b.requireApproval !== false;
 
     // Regras de autonomia gravadas no banco prevalecem sobre o que o app mandou.
     const { data: rules } = await db.from('autonomy_rules').select('category, mode');
@@ -158,7 +167,7 @@ Deno.serve(handle(async (b) => {
     }
 
     const profile = await ensureProfile(db);
-    const taskText = loginMode ? task : buildTask({ task, targetUrl, hasLogin: bindings.length > 0, files: attached, requireApproval });
+    const taskText = buildTask({ task, targetUrl, hasLogin: bindings.length > 0, files: attached, requireApproval });
     const common = {
       task: taskText,
       ...(bindings.length ? { secretBindings: bindings } : {}),
@@ -189,8 +198,8 @@ Deno.serve(handle(async (b) => {
   const { data: s } = await db.from('handoff_sessions').select('*').eq('id', String(b.id || '')).maybeSingle();
   if (!s) return json({ error: 'Sessão não encontrada' }, 404);
 
-  const followUp = async (task: string, phase: 'prepare' | 'final') => {
-    const { bindings } = await secretBindingsFor(db, s.credential_id);
+  const followUp = async (task: string, phase: 'prepare' | 'final', override?: unknown[]) => {
+    const bindings = override ?? (await secretBindingsFor(db, s.credential_id)).bindings;
     const run = await bu('/runs', {
       body: {
         task: `${task}\n${bindings.length ? 'Se pedir login, use os segredos "site-username" e "site-password".' : ''}\n${SAFETY}`,
@@ -204,8 +213,8 @@ Deno.serve(handle(async (b) => {
 
   /* ------------------------------ STATUS ------------------------------ */
   if (b.action === 'status') {
-    if (['takeover', 'cancelled', 'completed', 'failed'].includes(s.status)) {
-      return json({ status: s.status, liveUrl: s.live_url, steps: [] });
+    if (['takeover', 'cancelled', 'completed', 'failed', 'needs_login', 'needs_manual'].includes(s.status)) {
+      return json({ status: s.status, liveUrl: s.live_url, steps: [], loginDomain: cleanDomain(s.target_url) });
     }
     const { status } = await bu(`/runs/${s.external_session_id}/status`);
     const ev = await bu(`/runs/${s.external_session_id}/events?after=0&limit=200`).catch(() => ({ events: [] }));
@@ -214,9 +223,18 @@ Deno.serve(handle(async (b) => {
     let mapped: string = 'running';
     let result: string | null = null, error: string | null = null;
 
+    let loginDomain: string | null = null;
     if (status === 'completed') {
       mapped = s.phase === 'final' || !s.require_approval ? 'completed' : 'awaiting_approval';
-      result = (await bu(`/runs/${s.external_session_id}`).catch(() => null))?.result ?? null;
+      const raw: string = (await bu(`/runs/${s.external_session_id}`).catch(() => null))?.result ?? '';
+      // A IA sinaliza com marcadores quando precisa do usuário; o app mostra o cofre (login) ou o "tomar controle" (2FA).
+      const login = raw.match(/\[\[LOGIN_NECESSARIO:?\s*([^\]]*)\]\]/i);
+      // Rede de segurança: se o agente não usou o marcador mas descreveu claramente que o site exige login
+      // (e a sessão não tinha login do Cofre), trata como pedido de login.
+      const saysLogin = !s.credential_id && /(pede|exige|requer|precisa d[eo]|necess[aá]ri[oa]|solicit\w*)\W+(\w+\W+){0,4}(login|senha|credenciais|e-mail e senha)|fa[cç]a (o )?login|tela de login|sign in|log in|not logged in|n[aã]o est[aá] logad/i.test(raw);
+      if (login || (saysLogin && !/\[\[AJUDA_MANUAL\]\]/i.test(raw))) { mapped = 'needs_login'; loginDomain = cleanDomain(login?.[1] ?? '') || cleanDomain(s.target_url); }
+      else if (/\[\[AJUDA_MANUAL\]\]/i.test(raw)) mapped = 'needs_manual';
+      result = raw.replace(/\[\[[^\]]*\]\]/g, '').trim() || null;
     } else if (status === 'failed') {
       mapped = 'failed';
       error = (await bu(`/runs/${s.external_session_id}`).catch(() => null))?.error ?? 'A sessão falhou.';
@@ -226,13 +244,39 @@ Deno.serve(handle(async (b) => {
     await db.from('handoff_sessions').update({ status: mapped, live_url: liveUrl }).eq('id', s.id);
     // Fim da tarefa (sem aprovação pendente): encerra o navegador para o Browser Use gravar o login no perfil.
     if (mapped === 'completed' || mapped === 'failed') await stopBrowser(s.bu_session_id);
-    return json({ status: mapped, liveUrl, steps: stepsFrom(events), result, error });
+    return json({ status: mapped, liveUrl, steps: stepsFrom(events), result, error, loginDomain });
   }
 
   /* ------------------------------ APPROVE ------------------------------ */
   if (b.action === 'approve') {
     if (s.status !== 'awaiting_approval') return json({ error: 'Nada aguardando aprovação' }, 409);
     await followUp('O usuário APROVOU. Na página atual, clique agora no botão final de envio/confirmação, confirme que deu certo e descreva o resultado.', 'final');
+    return json({ ok: true });
+  }
+
+  /* ---------------------------- PROVIDE_LOGIN ---------------------------- */
+  if (b.action === 'provide_login') {
+    // O usuário preencheu o cofre no chat. A senha vai direto ao navegador (secretBindings); a IA só vê os apelidos.
+    if (s.status !== 'needs_login') return json({ error: 'Esta sessão não está pedindo login' }, 409);
+    const username = String(b.username || '').slice(0, 200);
+    const password = String(b.password || '');
+    if (!username || !password) return json({ error: 'Informe usuário e senha' }, 400);
+    const domain = cleanDomain(b.domain || s.target_url);
+    let bindings: unknown[];
+    if (b.remember !== false) {
+      const { encrypted, iv } = await encryptSecret(password);
+      const { data: cred, error } = await db.from('credential_vault').insert({
+        site_name: (domain.split('.')[0] || domain).replace(/^./, (c: string) => c.toUpperCase()), domain, login_url: `https://${domain}`,
+        username, encrypted_password: encrypted, iv, auto_login: true
+      }).select('id').single();
+      if (error) throw error;
+      s.credential_id = cred.id;
+      await db.from('handoff_sessions').update({ credential_id: cred.id }).eq('id', s.id);
+      bindings = (await secretBindingsFor(db, cred.id)).bindings;
+    } else {
+      bindings = inlineBindings(username, password, domain);
+    }
+    await followUp(`O usuário informou o login. Entre no site usando os segredos "site-username" e "site-password" e depois continue a tarefa original: ${s.task_prompt}`, 'prepare', bindings);
     return json({ ok: true });
   }
 

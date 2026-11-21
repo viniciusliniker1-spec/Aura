@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Upload, ExternalLink, Trash2, Hand, Maximize2 } from 'lucide-react';
 import { useAura } from '../state/AuraContext';
 import { openExternal } from '../lib/native';
+import { LoginForm } from '../components/LoginForm';
 import { uuid } from '../lib/api';
 import * as api from '../lib/api';
 import type { DiagResult, Probe } from '../lib/api';
@@ -17,7 +18,7 @@ const brl = (n: number) => `R$ ${n.toFixed(2).replace('.', ',')}`;
 
 /* ============================ NAVEGADOR ============================ */
 const BrowserView: React.FC = () => {
-  const { handoff: h, startHandoff, requestFinish, approveHandoff, toggleTakeover, closeHandoff, files, remote, liveFullscreen, setLiveFullscreen } = useAura();
+  const { handoff: h, startHandoff, submitLogin, requestFinish, approveHandoff, toggleTakeover, closeHandoff, files, remote, liveFullscreen, setLiveFullscreen } = useAura();
   const [loginUrl, setLoginUrl] = useState('');
   const [url, setUrl] = useState('gupy.io');
   const [task, setTask] = useState('');
@@ -42,11 +43,11 @@ const BrowserView: React.FC = () => {
       </div>
 
       <div className="glass-card rounded-[28px] p-5 space-y-2.5">
-        <h3 className="font-serif text-xl text-white">entrar e guardar login</h3>
-        <p className="text-xs text-white/70">Abra um site, faça o seu login uma vez e o Aura passa a entrar já logado nas próximas vezes (como o Hark). A senha não passa pela IA.</p>
-        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const u = loginUrl.trim(); if (u) void startHandoff(u, `Entrar em ${u} e guardar o login`, null, true, { loginMode: true }); }}>
+        <h3 className="font-serif text-xl text-white">conectar um site</h3>
+        <p className="text-xs text-white/70">O Aura abre o site e, se pedir login, mostra o cofre aqui para você preencher. Ele entra sozinho e guarda a sessão para as próximas vezes. Você só assume o navegador em 2FA ou CAPTCHA.</p>
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const u = loginUrl.trim(); if (u) void startHandoff(u, `Conectar ao site ${u}`, null, true, { connect: true }); }}>
           <input value={loginUrl} onChange={(e) => setLoginUrl(e.target.value)} placeholder="linkedin.com, gupy.io, seu banco…" className={`flex-1 ${input}`} />
-          <button type="submit" className={`px-4 py-2 ${btnLight}`}>Entrar</button>
+          <button type="submit" className={`px-4 py-2 ${btnLight}`}>Conectar</button>
         </form>
       </div>
 
@@ -89,8 +90,15 @@ const BrowserView: React.FC = () => {
             {h.fileName && <p className="text-emerald-300 text-[11px]">📎 Upload: {h.fileName}</p>}
           </div>
           <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-white transition-all duration-300" style={{ width: `${h.status === 'completed' ? 100 : pct}%` }} /></div>
+          {h.status === 'needs_login' && (
+            <div className="rounded-2xl bg-white/5 p-3.5">
+              <LoginForm domain={h.loginDomain || h.url.split('/')[0]} onSubmit={(c) => submitLogin(h.id, c)} onManual={() => void toggleTakeover()} />
+            </div>
+          )}
           <p className="text-xs text-white/75">
-            {h.status === 'takeover' ? '✋ Você está no controle: faça login, 2FA ou CAPTCHA na Live View e depois toque em "Devolver à IA".'
+            {h.status === 'needs_login' ? '🔐 Aguardando o seu login (preencha o cofre acima).'
+              : h.status === 'needs_manual' ? '✋ O site pediu uma verificação (2FA/CAPTCHA). Toque em "Tomar controle".'
+              : h.status === 'takeover' ? '✋ Você está no controle: faça login, 2FA ou CAPTCHA na Live View e depois toque em "Devolver à IA".'
               : h.status === 'completed' ? '✅ Concluído e cookies salvos no perfil.'
               : h.status === 'failed' ? `⚠️ ${h.error || 'A sessão falhou.'}`
               : h.status === 'cancelled' ? 'Sessão cancelada.'

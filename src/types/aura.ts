@@ -21,7 +21,11 @@ export interface ProactiveCard {
 export type ChatItem =
   | { id: string; role: 'user' | 'assistant'; text: string; meta?: string }
   | { id: string; role: 'handoff_card'; title: string; domain: string; task: string; file?: string | null }
-  | { id: string; role: 'divider'; text: string };
+  | { id: string; role: 'divider'; text: string }
+  /** A IA parou porque o site pede login: o chat mostra o cofre para você preencher. */
+  | { id: string; role: 'login_request'; domain: string; sessionId: string; done?: boolean }
+  /** 2FA/CAPTCHA: só nesse caso você assume o navegador. */
+  | { id: string; role: 'manual_request'; sessionId: string; done?: boolean };
 
 export interface ProjectMessage {
   role: 'user' | 'assistant';
@@ -64,6 +68,8 @@ export interface AutonomyRule {
 export type HandoffStatus =
   | 'running'
   | 'awaiting_approval'
+  | 'needs_login'
+  | 'needs_manual'
   | 'takeover'
   | 'completed'
   | 'failed'
@@ -82,7 +88,7 @@ export interface HandoffState {
   stepIndex: number;
   liveUrl: string | null;
   requireApproval: boolean;
-  loginMode?: boolean;
+  loginDomain?: string;
   /** Sessão remota só é consultada depois que o servidor devolveu o ID real. */
   ready?: boolean;
   persistent?: boolean;

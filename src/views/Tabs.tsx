@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Activity, Plus, Clock, Globe, ChevronRight } from 'lucide-react';
 import { useAura } from '../state/AuraContext';
 import { AutoTextarea } from '../components/AutoTextarea';
+import { LoginForm } from '../components/LoginForm';
 import type { RoutineState } from '../types/aura';
 
 /* ============================== INÍCIO ============================== */
@@ -88,7 +89,7 @@ export const InicioView: React.FC = () => {
 
 /* ================================ CHAT ================================ */
 export const ChatView: React.FC = () => {
-  const { chat, sending, startHandoff, handoff, files, openSubview } = useAura();
+  const { chat, sending, startHandoff, handoff, files, openSubview, submitLogin, toggleTakeover } = useAura();
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [chat.length, sending]);
 
@@ -105,6 +106,22 @@ export const ChatView: React.FC = () => {
       <div className="space-y-3 pb-2">
         {chat.map((m) => {
           if (m.role === 'divider') return <div key={m.id} className="py-2 text-center text-xs text-white/55">{m.text}</div>;
+          if (m.role === 'login_request') {
+            if (m.done) return <div key={m.id} className="obsidian-card rounded-[22px] px-4 py-3 text-xs text-white/70 w-[82%] animate-in">🔐 Login de {m.domain} enviado ao Cofre. Continuando…</div>;
+            return (
+              <div key={m.id} className="glass-card rounded-[24px] p-4 shadow-lg animate-in">
+                <LoginForm domain={m.domain} onSubmit={(c) => submitLogin(m.sessionId, c)} onManual={() => void toggleTakeover()} />
+              </div>
+            );
+          }
+          if (m.role === 'manual_request') {
+            return (
+              <div key={m.id} className="glass-card rounded-[24px] p-4 space-y-2.5 shadow-lg animate-in">
+                <p className="text-sm text-white/95">O site pediu uma verificação (2FA ou CAPTCHA). Isso só você consegue resolver.</p>
+                <button type="button" onClick={() => void toggleTakeover()} className="w-full py-3 rounded-full btn-light text-sm font-medium">✋ Tomar controle</button>
+              </div>
+            );
+          }
           if (m.role === 'handoff_card') {
             return (
               <button key={m.id} type="button" onClick={() => void startHandoff(m.domain, m.task, m.file)}
