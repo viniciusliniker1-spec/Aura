@@ -130,7 +130,7 @@ export function useVoiceLive(onFinalTranscript: (text: string) => void) {
 
     ws.send(JSON.stringify({
       setup: {
-        model: `models/${tok.model || 'gemini-live-2.5-flash-preview'}`,
+        model: `models/${tok.model || 'gemini-3.8-live'}`,
         generationConfig: { responseModalities: ['AUDIO'] },
         inputAudioTranscription: {}
       }

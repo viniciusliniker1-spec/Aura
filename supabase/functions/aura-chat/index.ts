@@ -37,7 +37,7 @@ Deno.serve(handle(async (body) => {
 
   if (body.action === 'live_token') {
     const token = await mintLiveToken();
-    return json({ token, model: Deno.env.get('GEMINI_LIVE_MODEL') || 'gemini-live-2.5-flash-preview' });
+    return json({ token, model: Deno.env.get('GEMINI_LIVE_MODEL') || 'gemini-3.8-live' });
   }
 
   if (body.action === 'generate_panel') {

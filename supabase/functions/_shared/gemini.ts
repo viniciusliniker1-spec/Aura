@@ -5,7 +5,13 @@ const key = () => {
   if (!k) throw new Error('GEMINI_API_KEY não configurada (supabase secrets set GEMINI_API_KEY=...)');
   return k;
 };
-export const GEN_MODEL = () => Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash';
+// gemini-2.5-flash está depreciado (desligamento previsto em 01/12/2026). Tenta, em ordem, o modelo do secret
+// GEMINI_MODEL (se houver) e depois alternativas estáveis, até uma funcionar para a sua chave.
+const MODEL_FALLBACKS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+export const GEN_MODELS = (): string[] => {
+  const custom = Deno.env.get('GEMINI_MODEL');
+  return [...new Set([...(custom ? [custom] : []), ...MODEL_FALLBACKS])];
+};
 export const EMBED_MODEL = () => Deno.env.get('GEMINI_EMBED_MODEL') || 'gemini-embedding-001';
 
 /** Embedding de 768 dimensões (casa com a coluna vector(768) das memórias). */
@@ -43,21 +49,22 @@ export async function generate({ system, contents, schema }: GenOpts): Promise<s
     contents,
     ...(schema ? { generationConfig: { responseMimeType: 'application/json', responseSchema: schema } } : {})
   });
-  let res = await fetch(`${BASE}/v1beta/models/${GEN_MODEL()}:generateContent`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k }, body
-  });
-  if (!res.ok && k.startsWith('AQ.')) {
-    // Chaves "AQ." são do Vertex AI (modo express): tenta o endpoint do Vertex antes de desistir.
-    const first = (await res.text()).slice(0, 160);
-    const vx = await fetch(`https://aiplatform.googleapis.com/v1/publishers/google/models/${GEN_MODEL()}:generateContent?key=${encodeURIComponent(k)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body
+  const errors: string[] = [];
+  for (const model of GEN_MODELS()) {
+    const res = await fetch(`${BASE}/v1beta/models/${model}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k }, body
     });
-    if (!vx.ok) throw new Error(`Gemini recusou a chave. AI Studio ${res.status}: ${first} | Vertex ${vx.status}: ${(await vx.text()).slice(0, 160)}`);
-    res = vx;
+    if (res.ok) {
+      const j = await res.json();
+      return j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') ?? '';
+    }
+    const txt = (await res.text()).slice(0, 220);
+    errors.push(`${model} → ${res.status}: ${txt}`);
+    // Só troca de modelo quando o problema é o modelo (inexistente/sem acesso). Chave inválida ou cota não adiantam.
+    const modelProblem = res.status === 404 || (res.status === 400 && /model/i.test(txt)) || (res.status === 403 && /model|not.*(allowed|available)|access/i.test(txt));
+    if (!modelProblem) break;
   }
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const j = await res.json();
-  return j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') ?? '';
+  throw new Error(`Gemini falhou. ${errors.join(' | ')}`);
 }
 
 export async function generateJSON<T>(opts: GenOpts): Promise<T> {

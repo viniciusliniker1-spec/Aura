@@ -17,8 +17,10 @@ export const lastFunctionError = { message: '' };
 
 /** Traduz o erro técnico numa dica do que conferir. */
 export function explainError(msg: string): string {
-  if (/api key|API_KEY|generativelanguage|aiplatform|gemini/i.test(msg))
-    return `${msg}\n\nConfira o secret GEMINI_API_KEY (ideal: chave do Google AI Studio, começa com AIza) e rode o workflow "Deploy Supabase" de novo.`;
+  if (/model|404|not found/i.test(msg) && /gemini/i.test(msg))
+    return `${msg}\n\nO modelo do Gemini pode ter mudado. Defina o secret GEMINI_MODEL no GitHub com um modelo atual (veja aistudio.google.com/docs/models) e rode "Deploy Supabase".`;
+  if (/api key|API_KEY|generativelanguage|gemini/i.test(msg))
+    return `${msg}\n\nConfira o secret GEMINI_API_KEY no GitHub e rode o workflow "Deploy Supabase" de novo.`;
   if (/acesso negado|401|403/i.test(msg))
     return `${msg}\n\nO VITE_AURA_ACCESS_TOKEN do app precisa ser igual ao secret AURA_ACCESS_TOKEN.`;
   return msg || 'Sem resposta do servidor. Veja os logs em Supabase → Edge Functions.';
