@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Mic, X, Globe, FileUp, KeyRound, Sparkles, ArrowUp } from 'lucide-react';
+import { Plus, Search, Mic, X, Globe, FileUp, KeyRound, Sparkles, ArrowUp, Minimize2, Hand, Check } from 'lucide-react';
 import { AutoTextarea } from './AutoTextarea';
 import { useAura } from '../state/AuraContext';
 import type { TabId, SubviewId } from '../types/aura';
@@ -191,6 +191,79 @@ export const Toast: React.FC = () => {
   return (
     <div className={`pointer-events-none transition-opacity duration-200 absolute top-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full obsidian-card text-xs text-white shadow-2xl whitespace-nowrap max-w-[92%] overflow-hidden text-ellipsis ${toast ? 'opacity-100' : 'opacity-0'}`}>
       {toast}
+    </div>
+  );
+};
+
+/** Live View em tela cheia, com "Tomar controle" / "Devolver à IA" sempre à mão. */
+export const LiveViewOverlay: React.FC = () => {
+  const { handoff: h, liveFullscreen, setLiveFullscreen, approveHandoff, toggleTakeover, closeHandoff } = useAura();
+  const [busy, setBusy] = useState(false);
+  if (!liveFullscreen || !h) return null;
+
+  const mine = h.status === 'takeover';
+  const finished = h.status === 'completed' || h.status === 'failed' || h.status === 'cancelled';
+  const chip =
+    mine ? { t: '✋ Você está no controle', c: 'bg-amber-400/20 text-amber-200 border-amber-300/30' }
+    : h.status === 'awaiting_approval' ? { t: '⏸ Aguardando sua aprovação', c: 'bg-sky-400/20 text-sky-200 border-sky-300/30' }
+    : h.status === 'completed' ? { t: '✅ Concluído', c: 'bg-emerald-400/20 text-emerald-200 border-emerald-300/30' }
+    : h.status === 'failed' ? { t: '⚠️ Falhou', c: 'bg-red-400/20 text-red-200 border-red-300/30' }
+    : h.status === 'cancelled' ? { t: 'Cancelado', c: 'bg-white/10 text-white/70 border-white/10' }
+    : { t: '🤖 A IA está navegando', c: 'bg-white/10 text-white/85 border-white/15' };
+  const swap = async () => { setBusy(true); await toggleTakeover(); setBusy(false); };
+
+  return (
+    <div className="absolute inset-0 z-[55] bg-black flex flex-col animate-in">
+      <div className="shrink-0 flex items-center gap-3 px-3 pb-2 bg-[#0E1014]" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+        <button type="button" onClick={() => setLiveFullscreen(false)} aria-label="Reduzir" title="Reduzir"
+          className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white shrink-0">
+          <Minimize2 className="w-4 h-4" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-mono text-white/80 truncate">{h.url}</p>
+          <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full border text-[10px] ${chip.c}`}>{chip.t}</span>
+        </div>
+      </div>
+
+      <div className="flex-1 relative bg-black min-h-0">
+        {h.liveUrl ? (
+          <iframe src={h.liveUrl} title="Live View em tela cheia" className="absolute inset-0 w-full h-full bg-black border-0" allow="clipboard-read; clipboard-write" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-white/60">
+            {h.liveUrl === null && !finished ? 'Carregando a Live View…' : 'Sem Live View nesta sessão.'}
+          </div>
+        )}
+        {mine && <div className="absolute inset-x-0 top-0 h-1 bg-amber-300" />}
+      </div>
+
+      <div className="shrink-0 px-3 pt-2.5 bg-[#0E1014] space-y-2" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+        {mine && <p className="text-[11px] text-amber-200/90 text-center">A IA está pausada. Faça login, 2FA ou CAPTCHA e toque em "Devolver à IA".</p>}
+        <div className="flex gap-2">
+          {finished ? (
+            <button type="button" onClick={() => void closeHandoff()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium">Fechar sessão</button>
+          ) : mine ? (
+            <>
+              <button type="button" disabled={busy} onClick={() => void swap()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium inline-flex items-center justify-center gap-2 disabled:opacity-60">
+                <Check className="w-4 h-4" /> Devolver à IA
+              </button>
+              <button type="button" onClick={() => void closeHandoff()} className="px-4 rounded-full bg-white/10 text-sm text-red-300">Cancelar</button>
+            </>
+          ) : h.status === 'awaiting_approval' ? (
+            <>
+              <button type="button" onClick={() => void approveHandoff()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium">✓ Aprovar e enviar</button>
+              <button type="button" disabled={busy} onClick={() => void swap()} className="px-4 rounded-full bg-white/10 text-sm text-white inline-flex items-center gap-1.5 disabled:opacity-60"><Hand className="w-4 h-4" /> Tomar controle</button>
+              <button type="button" onClick={() => void closeHandoff()} aria-label="Cancelar" className="w-12 rounded-full bg-white/10 text-red-300 flex items-center justify-center"><X className="w-4 h-4" /></button>
+            </>
+          ) : (
+            <>
+              <button type="button" disabled={busy} onClick={() => void swap()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium inline-flex items-center justify-center gap-2 disabled:opacity-60">
+                <Hand className="w-4 h-4" /> Tomar controle
+              </button>
+              <button type="button" onClick={() => void closeHandoff()} className="px-4 rounded-full bg-white/10 text-sm text-red-300">Cancelar</button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

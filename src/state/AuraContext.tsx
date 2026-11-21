@@ -74,6 +74,8 @@ export interface AuraCtx {
   approveHandoff: () => Promise<void>;
   toggleTakeover: () => Promise<void>;
   closeHandoff: () => Promise<void>;
+  liveFullscreen: boolean;
+  setLiveFullscreen: (v: boolean) => void;
 }
 
 const Ctx = createContext<AuraCtx | null>(null);
@@ -104,6 +106,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [autonomyMap, setAutonomyMap] = useState<Record<string, boolean>>(DEFAULT_AUTONOMY);
   const [cvBase, setCvBaseState] = useState('');
   const [handoff, setHandoff] = useState<HandoffState | null>(null);
+  const [liveFullscreen, setLiveFullscreen] = useState(false);
 
   const showToast = useCallback((m: string) => {
     setToast(m);
@@ -331,12 +334,16 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       patchHandoff({ status: entering ? 'takeover' : 'awaiting_approval' });
     }
+    // Ao tomar o controle, abre a Live View em tela cheia para você agir na hora.
+    if (entering) setLiveFullscreen(true);
+    void tap();
   }, [patchHandoff, showToast]);
 
   const closeHandoff = useCallback(async () => {
     const h = handoffRef.current;
     window.clearInterval(timerRef.current);
     if (h?.remote && h.status !== 'completed') await api.handoff.cancel(h.id);
+    setLiveFullscreen(false);
     setHandoff(null);
   }, []);
 
@@ -540,7 +547,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     files, uploadFile, deleteFile, tailorCv, cvBase, setCvBase,
     panels, updatePanel, createPanel, deletePanel,
     autonomy, toggleAutonomy,
-    handoff, startHandoff, approveHandoff, toggleTakeover, closeHandoff
+    handoff, startHandoff, approveHandoff, toggleTakeover, closeHandoff, liveFullscreen, setLiveFullscreen
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };

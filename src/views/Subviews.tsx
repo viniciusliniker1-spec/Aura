@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Upload, ExternalLink, Trash2 } from 'lucide-react';
+import { ArrowLeft, Upload, ExternalLink, Trash2, Hand, Maximize2 } from 'lucide-react';
 import { useAura } from '../state/AuraContext';
 import { openExternal } from '../lib/native';
 import { uuid } from '../lib/api';
@@ -17,7 +17,7 @@ const brl = (n: number) => `R$ ${n.toFixed(2).replace('.', ',')}`;
 
 /* ============================ NAVEGADOR ============================ */
 const BrowserView: React.FC = () => {
-  const { handoff: h, startHandoff, approveHandoff, toggleTakeover, closeHandoff, files, remote } = useAura();
+  const { handoff: h, startHandoff, approveHandoff, toggleTakeover, closeHandoff, files, remote, liveFullscreen, setLiveFullscreen } = useAura();
   const [url, setUrl] = useState('gupy.io');
   const [task, setTask] = useState('');
   const [file, setFile] = useState('');
@@ -45,17 +45,25 @@ const BrowserView: React.FC = () => {
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-mono text-white/80 truncate">🌐 https://{h.url}</span>
             {!finished && (
-              <button type="button" onClick={() => void toggleTakeover()} className="px-2.5 py-1 rounded-full bg-white/10 text-[10px] text-amber-300 shrink-0">
-                {h.status === 'takeover' ? 'Devolver IA' : 'Assumir 2FA'}
+              <button type="button" onClick={() => void toggleTakeover()} className="px-3 py-1.5 rounded-full bg-[#F2F3F5] text-[11px] font-medium text-[#16181E] shrink-0 inline-flex items-center gap-1">
+                <Hand className="w-3 h-3" /> {h.status === 'takeover' ? 'Devolver à IA' : 'Tomar controle'}
               </button>
             )}
           </div>
 
           {h.liveUrl && (
             <div className="space-y-2">
-              <iframe src={h.liveUrl} title="Live View" className="w-full h-64 rounded-2xl bg-black border border-white/10" allow="clipboard-read; clipboard-write" />
-              <button type="button" onClick={() => void openExternal(h.liveUrl!)} className="text-[11px] text-white/60 hover:text-white inline-flex items-center gap-1">
-                <ExternalLink className="w-3 h-3" /> Abrir Live View em tela cheia
+              <div className="relative">
+                {liveFullscreen
+                  ? <div className="w-full h-[40vh] rounded-2xl bg-black/60 border border-white/10 flex items-center justify-center text-xs text-white/60">Live View aberta em tela cheia</div>
+                  : <iframe src={h.liveUrl} title="Live View" className="w-full h-[46vh] rounded-2xl bg-black border border-white/10" allow="clipboard-read; clipboard-write" />}
+                <button type="button" onClick={() => setLiveFullscreen(true)} aria-label="Expandir em tela cheia"
+                  className="absolute top-2 right-2 h-9 px-3 rounded-full glass-pill text-[11px] text-white inline-flex items-center gap-1.5">
+                  <Maximize2 className="w-3.5 h-3.5" /> Tela cheia
+                </button>
+              </div>
+              <button type="button" onClick={() => void openExternal(h.liveUrl!)} className="text-[11px] text-white/50 hover:text-white inline-flex items-center gap-1">
+                <ExternalLink className="w-3 h-3" /> Abrir no navegador do celular
               </button>
             </div>
           )}
@@ -67,7 +75,7 @@ const BrowserView: React.FC = () => {
           </div>
           <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-white transition-all duration-300" style={{ width: `${h.status === 'completed' ? 100 : pct}%` }} /></div>
           <p className="text-xs text-white/75">
-            {h.status === 'takeover' ? '🖐️ Modo manual ativo: resolva 2FA/CAPTCHA na Live View e depois toque em "Devolver IA".'
+            {h.status === 'takeover' ? '✋ Você está no controle: faça login, 2FA ou CAPTCHA na Live View e depois toque em "Devolver à IA".'
               : h.status === 'completed' ? '✅ Concluído e cookies salvos no perfil.'
               : h.status === 'failed' ? `⚠️ ${h.error || 'A sessão falhou.'}`
               : h.status === 'cancelled' ? 'Sessão cancelada.'
