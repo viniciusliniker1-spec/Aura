@@ -54,33 +54,32 @@ Deno.serve(handle(async (body) => {
   if (!message) return json({ error: 'Mensagem vazia' }, 400);
   const projectId: string | null = body.projectId || null;
 
-  // 1. Memória longa: embedding da pergunta + busca semântica
-  const qEmb = await embed(message, 'RETRIEVAL_QUERY');
+  // 1+2. Tudo em paralelo: embedding, histórico, arquivos e contexto do projeto (antes era em fila).
+  const t0 = Date.now();
+  let hq = db.from('messages').select('role, content').order('created_at', { ascending: false }).limit(8);
+  hq = projectId ? hq.eq('project_id', projectId) : hq.is('project_id', null);
+  const [qEmb, histRes, filesRes, projRes, pfRes] = await Promise.all([
+    embed(message, 'RETRIEVAL_QUERY'),
+    hq,
+    db.from('user_files').select('file_name').order('updated_at', { ascending: false }).limit(30),
+    projectId ? db.from('projects').select('title, description').eq('id', projectId).maybeSingle() : Promise.resolve({ data: null }),
+    projectId ? db.from('project_files').select('file_name').eq('project_id', projectId) : Promise.resolve({ data: [] })
+  ]);
   let memoryContext = '';
   if (qEmb) {
     const { data: matched } = await db.rpc('match_memories', { query_embedding: qEmb, match_threshold: 0.55, match_count: 6 });
     if (matched?.length) memoryContext = matched.map((m: any) => `- [${m.tag}] ${m.content}`).join('\n');
   }
-
-  // 2. Contexto do projeto (arquivos vinculados) e histórico recente da conversa
-  let projectContext = '';
-  if (projectId) {
-    const [{ data: proj }, { data: pf }] = await Promise.all([
-      db.from('projects').select('title, description').eq('id', projectId).maybeSingle(),
-      db.from('project_files').select('file_name').eq('project_id', projectId)
-    ]);
-    if (proj) projectContext = `Projeto atual: "${proj.title}" — ${proj.description ?? ''}\nArquivos vinculados: ${(pf ?? []).map((f: any) => f.file_name).join(', ') || 'nenhum'}`;
-  }
-  let hq = db.from('messages').select('role, content').order('created_at', { ascending: false }).limit(10);
-  hq = projectId ? hq.eq('project_id', projectId) : hq.is('project_id', null);
-  const { data: hist } = await hq;
-  const history = (hist ?? []).reverse().map((m: any) => ({
+  const proj = (projRes as any).data;
+  const projectContext = proj
+    ? `Projeto atual: "${proj.title}" — ${proj.description ?? ''}\nArquivos vinculados: ${((pfRes as any).data ?? []).map((f: any) => f.file_name).join(', ') || 'nenhum'}`
+    : '';
+  const history = ((histRes as any).data ?? []).reverse().map((m: any) => ({
     role: m.role === 'assistant' ? 'model' : 'user' as 'user' | 'model',
     parts: [{ text: String(m.content) }]
   }));
-
-  const { data: fileRows } = await db.from('user_files').select('file_name').order('updated_at', { ascending: false }).limit(30);
-  const fileNames = (fileRows ?? []).map((f: any) => f.file_name);
+  const fileNames = ((filesRes as any).data ?? []).map((f: any) => f.file_name);
+  const tCtx = Date.now() - t0;
 
   const system = `Você é o Aura, assistente pessoal proativo (uso individual). Converse em português do Brasil, de forma natural, curta e útil.
 
@@ -103,6 +102,7 @@ Outros campos, só quando o usuário pedir claramente:
 - cvRequest {role,format}: adaptar o currículo para uma vaga (pdf ou docx).
 Se mensagens anteriores trouxerem resultados do navegador, use-os para responder.`;
 
+  const t1 = Date.now();
   const out = await generateJSON<any>({
     system,
     contents: [...history, { role: 'user', parts: [{ text: message }] }],
@@ -129,10 +129,15 @@ Se mensagens anteriores trouxerem resultados do navegador, use-os para responder
   if (out.panel?.title) result.panel = out.panel;
   if (out.cvRequest?.role) result.cvRequest = out.cvRequest;
 
-  await db.from('messages').insert([
+  // Grava o histórico DEPOIS de responder (não faz o usuário esperar).
+  const save = db.from('messages').insert([
     { project_id: projectId, role: 'user', content: message },
     { project_id: projectId, role: 'assistant', content: result.reply as string, metadata: { handoff: result.handoff ?? null } }
-  ]);
+  ]).then(({ error }: { error: unknown }) => { if (error) console.warn('historico:', error); });
+  // deno-lint-ignore no-explicit-any
+  const rt = (globalThis as any).EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(save); else await save;
 
+  console.log(`aura-chat: contexto ${tCtx}ms, LLM ${Date.now() - t1}ms, total ${Date.now() - t0}ms`);
   return json(result);
 }));

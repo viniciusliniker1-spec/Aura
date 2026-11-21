@@ -25,7 +25,8 @@ export async function embed(text: string, taskType = 'RETRIEVAL_QUERY'): Promise
         content: { parts: [{ text }] },
         taskType,
         outputDimensionality: 768
-      })
+      }),
+      signal: AbortSignal.timeout(4000)
     });
     if (!res.ok) { console.warn('embed falhou', res.status, await res.text()); return null; }
     const j = await res.json();
@@ -44,21 +45,35 @@ export interface GenOpts {
 
 export async function generate({ system, contents, schema }: GenOpts): Promise<string> {
   const k = key();
-  const body = JSON.stringify({
+  const base = {
     ...(system ? { system_instruction: { parts: [{ text: system }] } } : {}),
-    contents,
-    ...(schema ? { generationConfig: { responseMimeType: 'application/json', responseSchema: schema } } : {})
-  });
+    contents
+  };
+  // Velocidade: sem "pensamento" interno (thinkingBudget 0) e resposta limitada. Se o modelo rejeitar o
+  // parâmetro de pensamento, repete a chamada sem ele.
+  const cfgFast = { ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}), thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 2048 };
+  const cfgPlain = { ...(schema ? { responseMimeType: 'application/json', responseSchema: schema } : {}), maxOutputTokens: 2048 };
+
+  const call = (model: string, cfg: Record<string, unknown>) =>
+    fetch(`${BASE}/v1beta/models/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
+      body: JSON.stringify({ ...base, generationConfig: cfg }),
+      signal: AbortSignal.timeout(30000)
+    });
+
   const errors: string[] = [];
   for (const model of GEN_MODELS()) {
-    const res = await fetch(`${BASE}/v1beta/models/${model}:generateContent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k }, body
-    });
+    let res = await call(model, cfgFast);
+    let txt = '';
+    if (!res.ok) {
+      txt = (await res.text()).slice(0, 220);
+      if (res.status === 400 && /thinking/i.test(txt)) { res = await call(model, cfgPlain); txt = res.ok ? '' : (await res.text()).slice(0, 220); }
+    }
     if (res.ok) {
       const j = await res.json();
       return j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') ?? '';
     }
-    const txt = (await res.text()).slice(0, 220);
     errors.push(`${model} → ${res.status}: ${txt}`);
     // Só troca de modelo quando o problema é o modelo (inexistente/sem acesso). Chave inválida ou cota não adiantam.
     const modelProblem = res.status === 404 || (res.status === 400 && /model/i.test(txt)) || (res.status === 403 && /model|not.*(allowed|available)|access/i.test(txt));
