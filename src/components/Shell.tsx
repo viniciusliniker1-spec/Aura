@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Mic, X, Globe, FileUp, KeyRound, Sparkles, ArrowUp, Minimize2, Hand, Check } from 'lucide-react';
+import { Plus, Search, Mic, X, Globe, FileUp, KeyRound, Sparkles, ArrowUp, Minimize2, Hand, Check, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { AutoTextarea } from './AutoTextarea';
 import { useAura } from '../state/AuraContext';
 import type { TabId, SubviewId } from '../types/aura';
@@ -197,7 +197,7 @@ export const Toast: React.FC = () => {
 
 /** Live View em tela cheia, com "Tomar controle" / "Devolver à IA" sempre à mão. */
 export const LiveViewOverlay: React.FC = () => {
-  const { handoff: h, liveFullscreen, setLiveFullscreen, approveHandoff, toggleTakeover, closeHandoff, finishHandoff } = useAura();
+  const { handoff: h, liveFullscreen, setLiveFullscreen, approveHandoff, toggleTakeover, closeHandoff, requestFinish, openVaultSheet } = useAura();
   const [busy, setBusy] = useState(false);
   if (!liveFullscreen || !h) return null;
 
@@ -223,6 +223,10 @@ export const LiveViewOverlay: React.FC = () => {
           <p className="text-xs font-mono text-white/80 truncate">{h.url}</p>
           <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full border text-[10px] ${chip.c}`}>{chip.t}</span>
         </div>
+        <button type="button" onClick={() => openVaultSheet('manual')} aria-label="Abrir o Cofre" title="Cofre"
+          className="h-10 px-3 rounded-full glass-pill text-xs text-white inline-flex items-center gap-1.5 shrink-0">
+          <KeyRound className="w-4 h-4 text-amber-300" /> Cofre
+        </button>
       </div>
 
       <div className="flex-1 relative bg-black min-h-0">
@@ -238,7 +242,7 @@ export const LiveViewOverlay: React.FC = () => {
 
       <div className="shrink-0 px-3 pt-2.5 bg-[#0E1014] space-y-2" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
         {mine && !h.loginMode && (
-          <button type="button" onClick={() => void finishHandoff()} className="w-full text-[11px] text-white/70 underline underline-offset-2">Guardar este login e encerrar a sessão</button>
+          <button type="button" onClick={() => requestFinish()} className="w-full text-[11px] text-white/70 underline underline-offset-2">Guardar este login e encerrar a sessão</button>
         )}
         {mine && (
           <p className="text-[11px] text-amber-200/90 text-center">
@@ -251,7 +255,7 @@ export const LiveViewOverlay: React.FC = () => {
           ) : mine ? (
             <>
               {h.loginMode ? (
-                <button type="button" onClick={() => void finishHandoff()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium inline-flex items-center justify-center gap-2">
+                <button type="button" onClick={() => requestFinish()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium inline-flex items-center justify-center gap-2">
                   <Check className="w-4 h-4" /> Guardar login e fechar
                 </button>
               ) : (
@@ -276,6 +280,93 @@ export const LiveViewOverlay: React.FC = () => {
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+/** Cofre aberto por cima da Live View: guarda usuário/senha (AES-256 no servidor; nunca passam pela IA). */
+export const VaultSheet: React.FC = () => {
+  const { vaultSheet, closeVaultSheet, handoff: h, credentials, addCredential, deleteCredential, finishHandoff, setLiveFullscreen, openSubview, remote } = useAura();
+  const domain = h ? h.url.replace(/^https?:\/\//i, '').split('/')[0].replace(/^www\./i, '') : '';
+  const [f, setF] = useState({ siteName: '', domain: '', username: '', password: '' });
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!vaultSheet) return;
+    const base = domain.split('.')[0] || '';
+    setF({ siteName: base.charAt(0).toUpperCase() + base.slice(1), domain, username: '', password: '' });
+    setShow(false);
+  }, [vaultSheet, domain]);
+
+  if (!vaultSheet) return null;
+  const finishing = vaultSheet === 'finish';
+  const matches = credentials.filter((c) => domain && (domain.includes(c.domain.toLowerCase()) || c.domain.toLowerCase().includes(domain)));
+  const field = 'w-full glass-tile rounded-xl px-3 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none';
+
+  const save = async () => {
+    if (!f.siteName.trim() || !f.domain.trim() || !f.username.trim() || !f.password) return;
+    setBusy(true);
+    const ok = await addCredential({ ...f, siteName: f.siteName.trim(), domain: f.domain.trim(), username: f.username.trim() });
+    setBusy(false);
+    if (!ok) return;
+    setF((p) => ({ ...p, username: '', password: '' }));
+    if (finishing) { closeVaultSheet(); await finishHandoff(); }
+  };
+
+  return (
+    <div className="absolute inset-0 z-[58] bg-black/60 flex items-end animate-in" onClick={() => !finishing && closeVaultSheet()}>
+      <div className="w-full glass-card bg-[#171a21] rounded-t-[28px] p-5 space-y-3 max-h-[88%] overflow-y-auto no-scrollbar" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-baseline justify-between">
+          <h3 className="font-serif text-2xl text-white">cofre</h3>
+          <span className="text-[11px] text-emerald-300 inline-flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> AES-256-GCM</span>
+        </div>
+        <p className="text-xs text-white/75">
+          {finishing
+            ? 'Quer guardar também o usuário e a senha? Assim o Aura entra sozinho se a sessão expirar. A senha é criptografada e nunca passa pela IA.'
+            : 'Guarde aqui o login deste site. O Aura usa automaticamente nas próximas tarefas, sem mostrar a senha para a IA.'}
+        </p>
+        {!remote && <p className="text-[11px] text-amber-300">Modo local: a senha fica só na memória e some ao fechar o app.</p>}
+
+        {matches.length > 0 && (
+          <div className="space-y-1.5">
+            {matches.map((c) => (
+              <div key={c.id} className="glass-tile rounded-2xl px-3 py-2.5 flex items-center justify-between text-xs">
+                <span className="text-emerald-300 min-w-0 truncate">✔ {c.siteName} · {c.username}</span>
+                <button type="button" onClick={() => deleteCredential(c.id)} className="text-white/40 hover:text-red-300 px-1">✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
+          <input className={field} value={f.siteName} onChange={(e) => setF({ ...f, siteName: e.target.value })} placeholder="Site" />
+          <input className={field} value={f.domain} onChange={(e) => setF({ ...f, domain: e.target.value })} placeholder="dominio.com" />
+        </div>
+        <input className={field} value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} placeholder="E-mail ou usuário" autoComplete="off" />
+        <div className="relative">
+          <input className={`${field} pr-11`} type={show ? 'text' : 'password'} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} placeholder="Senha" autoComplete="new-password" />
+          <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? 'Ocultar senha' : 'Mostrar senha'} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-white/60">
+            {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button type="button" disabled={busy || !f.username.trim() || !f.password} onClick={() => void save()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium disabled:opacity-40">
+            {busy ? 'Salvando…' : finishing ? 'Salvar e concluir' : 'Salvar no Cofre'}
+          </button>
+          {finishing ? (
+            <button type="button" onClick={() => { closeVaultSheet(); void finishHandoff(); }} className="px-4 rounded-full bg-white/10 text-sm text-white/85">Agora não</button>
+          ) : (
+            <button type="button" onClick={closeVaultSheet} className="px-4 rounded-full bg-white/10 text-sm text-white/85">Fechar</button>
+          )}
+        </div>
+        {finishing ? (
+          <button type="button" onClick={closeVaultSheet} className="w-full text-[11px] text-white/50 underline underline-offset-2">Voltar para o navegador</button>
+        ) : (
+          <button type="button" onClick={() => { closeVaultSheet(); setLiveFullscreen(false); openSubview('vault'); }} className="w-full text-[11px] text-white/50 underline underline-offset-2">Abrir o Cofre completo</button>
+        )}
       </div>
     </div>
   );

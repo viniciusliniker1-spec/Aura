@@ -3,7 +3,7 @@ import { App as CapApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { AuraProvider, useAura } from './state/AuraContext';
 import { useVoiceLive } from './hooks/useVoiceLive';
-import { TopBar, Composer, QuickSheet, ProjectModal, VoiceOverlay, LiveViewOverlay, Toast } from './components/Shell';
+import { TopBar, Composer, QuickSheet, ProjectModal, VoiceOverlay, LiveViewOverlay, VaultSheet, Toast } from './components/Shell';
 import { InicioView, ChatView, ProjetosView } from './views/Tabs';
 import { MenuView } from './views/Menu';
 import { SubviewHost } from './views/Subviews';
@@ -51,6 +51,7 @@ const Screen: React.FC = () => {
       <QuickSheet open={quick} onClose={() => setQuick(false)} />
       <ProjectModal open={projModal} onClose={() => setProjModal(false)} />
       <LiveViewOverlay />
+      <VaultSheet />
       <VoiceOverlay open={voiceOpen} onClose={() => setVoiceOpen(false)} voice={voice} />
       <Toast />
     </div>

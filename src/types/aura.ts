@@ -83,6 +83,8 @@ export interface HandoffState {
   liveUrl: string | null;
   requireApproval: boolean;
   loginMode?: boolean;
+  /** Sessão remota só é consultada depois que o servidor devolveu o ID real. */
+  ready?: boolean;
   persistent?: boolean;
   profileWarning?: string | null;
   error?: string;

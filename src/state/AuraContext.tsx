@@ -51,7 +51,7 @@ export interface AuraCtx {
   linkFileToProject: (projectId: string, file: StoredFile) => void;
 
   credentials: CredentialItem[];
-  addCredential: (c: { siteName: string; domain: string; username: string; password: string }) => Promise<void>;
+  addCredential: (c: { siteName: string; domain: string; username: string; password: string }) => Promise<boolean>;
   deleteCredential: (id: string) => void;
 
   files: StoredFile[];
@@ -72,6 +72,10 @@ export interface AuraCtx {
   handoff: HandoffState | null;
   startHandoff: (url: string, task: string, fileName?: string | null, focus?: boolean, opts?: { loginMode?: boolean }) => Promise<void>;
   finishHandoff: () => Promise<void>;
+  requestFinish: () => void;
+  vaultSheet: null | 'manual' | 'finish';
+  openVaultSheet: (mode: 'manual' | 'finish') => void;
+  closeVaultSheet: () => void;
   approveHandoff: () => Promise<void>;
   toggleTakeover: () => Promise<void>;
   closeHandoff: () => Promise<void>;
@@ -108,6 +112,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [cvBase, setCvBaseState] = useState('');
   const [handoff, setHandoff] = useState<HandoffState | null>(null);
   const [liveFullscreen, setLiveFullscreen] = useState(false);
+  const [vaultSheet, setVaultSheet] = useState<null | 'manual' | 'finish'>(null);
 
   const showToast = useCallback((m: string) => {
     setToast(m);
@@ -230,7 +235,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: uuid(), remote, url: url.replace(/^https?:\/\//i, ''), task,
       fileName: file && uploadFiles ? file.name : null, fileId: file && uploadFiles ? file.id : null,
       credUsed: loginMode ? 'Você fará o login; ele fica guardado no perfil' : credUsed,
-      status: 'running', stepIndex: 0, liveUrl: null, requireApproval, loginMode,
+      status: 'running', stepIndex: 0, liveUrl: null, requireApproval, loginMode, ready: !remote,
       steps: loginMode ? [`Abrindo ${domain} no navegador isolado…`, 'Pronto: toque em "Tomar controle" e faça o seu login.'] : [
         `Abrindo ${domain} no navegador isolado…`,
         useVault ? 'Injetando login do Cofre AES-256 (a senha não passa pela IA)…' : 'Navegando com o perfil persistente…',
@@ -251,7 +256,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setChat((p) => [...p, { id: uuid(), role: 'assistant', text: `⚠️ Não consegui abrir o navegador: ${why}` }]);
         return;
       }
-      patchHandoff({ id: res.id, liveUrl: res.liveUrl, persistent: res.persistent, profileWarning: res.profileWarning ?? null });
+      patchHandoff({ id: res.id, ready: true, liveUrl: res.liveUrl, persistent: res.persistent, profileWarning: res.profileWarning ?? null });
       return;
     }
     // Simulação local (sem Supabase / Browser Use)
@@ -275,8 +280,9 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const hId = handoff?.id;
   const hStatus = handoff?.status;
   const hRemote = handoff?.remote;
+  const hReady = handoff?.ready;
   useEffect(() => {
-    if (!hRemote || !hId || (hStatus !== 'running' && hStatus !== 'takeover')) return;
+    if (!hRemote || !hReady || !hId || (hStatus !== 'running' && hStatus !== 'takeover')) return;
     let alive = true;
     const tick = async () => {
       const r = await api.handoff.status(hId);
@@ -318,7 +324,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const iv = window.setInterval(tick, 3000);
     void tick();
     return () => { alive = false; window.clearInterval(iv); };
-  }, [hId, hStatus, hRemote]);
+  }, [hId, hStatus, hRemote, hReady]);
 
   const approveHandoff = useCallback(async () => {
     const h = handoffRef.current;
@@ -334,20 +340,26 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     showToast('Ação aprovada!');
   }, [patchHandoff, showToast]);
 
+  const takeoverBusy = useRef(false);
   const toggleTakeover = useCallback(async () => {
     const h = handoffRef.current;
-    if (!h) return;
-    const entering = h.status !== 'takeover';
-    if (h.remote) {
-      const r = entering ? await api.handoff.takeover(h.id) : await api.handoff.resume(h.id);
-      if (!r) { showToast('Não consegui trocar o controle'); return; }
-      patchHandoff({ status: entering ? 'takeover' : 'running' });
-    } else {
-      patchHandoff({ status: entering ? 'takeover' : 'awaiting_approval' });
+    if (!h || takeoverBusy.current) return;
+    takeoverBusy.current = true;
+    try {
+      const entering = h.status !== 'takeover';
+      if (h.remote) {
+        const r = entering ? await api.handoff.takeover(h.id) : await api.handoff.resume(h.id);
+        if (!r) { showToast('Não consegui trocar o controle'); return; }
+        patchHandoff({ status: entering ? 'takeover' : 'running' });
+      } else {
+        patchHandoff({ status: entering ? 'takeover' : 'awaiting_approval' });
+      }
+      // Ao tomar o controle, abre a Live View em tela cheia para você agir na hora.
+      if (entering) setLiveFullscreen(true);
+      void tap();
+    } finally {
+      takeoverBusy.current = false;
     }
-    // Ao tomar o controle, abre a Live View em tela cheia para você agir na hora.
-    if (entering) setLiveFullscreen(true);
-    void tap();
   }, [patchHandoff, showToast]);
 
   takeoverRef.current = toggleTakeover;
@@ -365,11 +377,24 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void success();
   }, [patchHandoff, showToast]);
 
+  // "Guardar login": se ainda não há login do Cofre para este site, abre o cofre antes de encerrar (como o Hark).
+  const requestFinish = useCallback(() => {
+    const h = handoffRef.current;
+    if (!h) return;
+    const domain = cleanDomain(h.url);
+    const has = credentials.some((c) => domain.includes(c.domain.toLowerCase()) || c.domain.toLowerCase().includes(domain));
+    if (h.loginMode && !has) setVaultSheet('finish');
+    else void finishHandoff();
+  }, [credentials, finishHandoff]);
+  const openVaultSheet = useCallback((mode: 'manual' | 'finish') => setVaultSheet(mode), []);
+  const closeVaultSheet = useCallback(() => setVaultSheet(null), []);
+
   const closeHandoff = useCallback(async () => {
     const h = handoffRef.current;
     window.clearInterval(timerRef.current);
     if (h?.remote && h.status !== 'completed') await api.handoff.cancel(h.id);
     setLiveFullscreen(false);
+    setVaultSheet(null);
     setHandoff(null);
   }, []);
 
@@ -435,13 +460,14 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addCredential = useCallback(async (c: { siteName: string; domain: string; username: string; password: string }) => {
     if (remote) {
       const saved = await api.vault.save(c);
-      if (!saved) { showToast('Falha ao salvar no Cofre'); return; }
+      if (!saved) { showToast('Falha ao salvar no Cofre'); return false; }
       setCredentials((p) => [saved, ...p]);
     } else {
       // Sem backend a senha fica só em memória (nunca vai para o armazenamento do aparelho).
       setCredentials((p) => [{ id: uuid(), siteName: c.siteName, domain: c.domain, username: c.username, pass: c.password }, ...p]);
     }
     showToast(remote ? 'Login salvo no Cofre AES-256' : 'Login guardado só em memória (modo local)');
+    return true;
   }, [showToast]);
 
   const deleteCredential = useCallback((id: string) => {
@@ -573,7 +599,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     files, uploadFile, deleteFile, tailorCv, cvBase, setCvBase,
     panels, updatePanel, createPanel, deletePanel,
     autonomy, toggleAutonomy,
-    handoff, startHandoff, finishHandoff, approveHandoff, toggleTakeover, closeHandoff, liveFullscreen, setLiveFullscreen
+    handoff, startHandoff, finishHandoff, requestFinish, vaultSheet, openVaultSheet, closeVaultSheet, approveHandoff, toggleTakeover, closeHandoff, liveFullscreen, setLiveFullscreen
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };

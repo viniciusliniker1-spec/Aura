@@ -17,7 +17,7 @@ const brl = (n: number) => `R$ ${n.toFixed(2).replace('.', ',')}`;
 
 /* ============================ NAVEGADOR ============================ */
 const BrowserView: React.FC = () => {
-  const { handoff: h, startHandoff, finishHandoff, approveHandoff, toggleTakeover, closeHandoff, files, remote, liveFullscreen, setLiveFullscreen } = useAura();
+  const { handoff: h, startHandoff, requestFinish, approveHandoff, toggleTakeover, closeHandoff, files, remote, liveFullscreen, setLiveFullscreen } = useAura();
   const [loginUrl, setLoginUrl] = useState('');
   const [url, setUrl] = useState('gupy.io');
   const [task, setTask] = useState('');
@@ -105,7 +105,7 @@ const BrowserView: React.FC = () => {
             ) : (
               <>
                 {h.status === 'takeover' && (
-                  <button type="button" onClick={() => void finishHandoff()} className={`flex-1 py-2 ${btnLight}`}>Guardar login e encerrar</button>
+                  <button type="button" onClick={() => requestFinish()} className={`flex-1 py-2 ${btnLight}`}>Guardar login e encerrar</button>
                 )}
                 <button type="button" onClick={() => void closeHandoff()} className={`${h.status === 'takeover' ? 'px-4' : 'w-full'} py-2 rounded-full bg-white/10 text-xs text-white/80`}>
                   {finished ? 'Fechar sessão' : 'Cancelar sessão'}
