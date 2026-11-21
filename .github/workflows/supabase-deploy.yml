@@ -1,0 +1,47 @@
+name: Deploy Supabase (banco + secrets + funções)
+
+# Rode manualmente: aba Actions > "Deploy Supabase" > Run workflow.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Ligar ao projeto
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Criar tabelas (migrations)
+        run: supabase db push
+
+      - name: Gravar secrets das funções (só os preenchidos)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VAULT_MASTER_KEY: ${{ secrets.VAULT_MASTER_KEY }}
+          AURA_ACCESS_TOKEN: ${{ secrets.AURA_ACCESS_TOKEN }}
+          BROWSER_USE_API_KEY: ${{ secrets.BROWSER_USE_API_KEY }}
+          BROWSER_USE_DEFAULT_PROFILE_ID: ${{ secrets.BROWSER_USE_DEFAULT_PROFILE_ID }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+        run: |
+          : > /tmp/fn.env
+          for k in GEMINI_API_KEY VAULT_MASTER_KEY AURA_ACCESS_TOKEN BROWSER_USE_API_KEY BROWSER_USE_DEFAULT_PROFILE_ID GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REFRESH_TOKEN; do
+            v="${!k}"
+            [ -n "$v" ] && echo "$k=$v" >> /tmp/fn.env
+          done
+          supabase secrets set --env-file /tmp/fn.env
+          rm -f /tmp/fn.env
+
+      - name: Publicar as 6 funções
+        run: supabase functions deploy --use-api
