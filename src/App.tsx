@@ -20,7 +20,19 @@ const Screen: React.FC = () => {
 
   const voice = useVoiceLive(useCallback((text: string) => { setVoiceOpen(false); void sendMessage(text); }, [sendMessage]));
 
-  useEffect(() => { mainRef.current?.scrollTo({ top: 0 }); }, [tab, subview]);
+  // Chat: sempre abre nas mensagens mais recentes. Demais telas: no topo.
+  // (rola de novo após o próximo quadro e após ~150 ms: cartões e fontes podem mudar a altura depois do primeiro render)
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const toEnd = !subview && tab === 'chat';
+    const go = () => el.scrollTo({ top: toEnd ? el.scrollHeight : 0 });
+    go();
+    if (!toEnd) return;
+    const raf = requestAnimationFrame(go);
+    const t = window.setTimeout(go, 150);
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(t); };
+  }, [tab, subview, ready]);
 
   // Botão "voltar" do Android: fecha subview/menu antes de sair do app.
   useEffect(() => {

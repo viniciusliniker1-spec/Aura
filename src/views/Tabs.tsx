@@ -91,7 +91,7 @@ export const InicioView: React.FC = () => {
 export const ChatView: React.FC = () => {
   const { chat, sending, startHandoff, handoff, files, openSubview, submitLogin, toggleTakeover } = useAura();
   const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [chat.length, sending]);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [chat.length, sending, chat[chat.length - 1]?.id]);
 
   const pill = handoff ? `Handoff · ${handoff.url.split('/')[0]}` : 'Gerenciar envio de CV · Gupy';
   return (
@@ -160,6 +160,15 @@ export const ProjetosView: React.FC<{ onNew: () => void }> = ({ onNew }) => {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const p = projects.find((x) => x.id === selected);
+  const projEndRef = useRef<HTMLDivElement>(null);
+  const projCount = p?.messages.length ?? 0;
+  useEffect(() => {
+    if (!selected) return;
+    const el = projEndRef.current;
+    el?.scrollIntoView({ block: 'end' });
+    const t = window.setTimeout(() => el?.scrollIntoView({ block: 'end' }), 150);
+    return () => window.clearTimeout(t);
+  }, [selected, projCount]);
 
   if (p) {
     return (
@@ -190,6 +199,7 @@ export const ProjetosView: React.FC<{ onNew: () => void }> = ({ onNew }) => {
           <AutoTextarea value={text} onValueChange={setText} disabled={busy} maxRows={5} placeholder="Continuar neste projeto..." className="flex-1 min-w-0 bg-transparent text-xs leading-[18px] text-white placeholder-white/50 focus:outline-none py-[7px]" />
           <button type="submit" disabled={busy || !text.trim()} className="px-3.5 py-1.5 mb-0.5 rounded-full btn-light text-xs font-medium disabled:opacity-40 shrink-0">Enviar</button>
         </form>
+        <div ref={projEndRef} />
       </section>
     );
   }
