@@ -121,6 +121,9 @@ Se mensagens anteriores trouxerem resultados do navegador, use-os para responder
     result.memorySaved = fact;
     if (mem) result.memoryId = mem.id;
   }
+  // Trava em código (o prompt sozinho não garante): se a resposta termina em pergunta, o modelo está pedindo um dado
+  // ao usuário; abrir o navegador agora gastaria uma sessão paga com tarefa vaga. Navega só depois da resposta.
+  if (out.handoff && /\?\s*$/.test(String(out.reply ?? '').trim())) out.handoff = undefined;
   if (out.handoff?.url) {
     result.handoff = {
       url: String(out.handoff.url).slice(0, 300),
