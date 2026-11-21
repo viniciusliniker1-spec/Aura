@@ -17,6 +17,8 @@ export const lastFunctionError = { message: '' };
 
 /** Traduz o erro técnico numa dica do que conferir. */
 export function explainError(msg: string): string {
+  if (/429|quota|RESOURCE_EXHAUSTED|exhausted|billing|rate.?limit/i.test(msg))
+    return `${msg}\n\nLimite de uso (cota) do Gemini atingido. Confira o plano e o uso da chave em aistudio.google.com (API keys) e tente de novo mais tarde ou ative o faturamento.`;
   if (/503|UNAVAILABLE|high demand|overload|sobrecarreg|sem resposta/i.test(msg))
     return `${msg}\n\nO Gemini está sobrecarregado neste momento (é temporário, do lado do Google). Tente enviar de novo em alguns instantes.`;
   if (/model|404|not found/i.test(msg) && /gemini/i.test(msg))
