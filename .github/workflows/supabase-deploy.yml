@@ -40,8 +40,8 @@ jobs:
             v="${!k}"
             [ -n "$v" ] && echo "$k=$v" >> /tmp/fn.env
           done
-          supabase secrets set --env-file /tmp/fn.env
+          supabase secrets set --env-file /tmp/fn.env --yes
           rm -f /tmp/fn.env
 
       - name: Publicar as 6 funções
-        run: supabase functions deploy --use-api
+        run: supabase functions deploy --use-api --yes
