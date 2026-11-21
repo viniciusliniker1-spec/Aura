@@ -43,6 +43,7 @@ export const data = {
     callFunction('aura-data', { action: 'project_create', project: p }),
   projectAddFile: (projectId: string, fileName: string, storagePath: string) =>
     callFunction('aura-data', { action: 'project_add_file', projectId, fileName, storagePath }),
+  chatAppend: (text: string) => callFunction('aura-data', { action: 'chat_append', text }),
   panelSave: (p: PanelItem) => callFunction('aura-data', { action: 'panel_save', panel: p }),
   panelDelete: (id: string) => callFunction('aura-data', { action: 'panel_delete', id }),
   autonomySet: (category: string, auto: boolean) =>

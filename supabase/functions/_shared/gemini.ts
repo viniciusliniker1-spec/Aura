@@ -37,15 +37,24 @@ export interface GenOpts {
 }
 
 export async function generate({ system, contents, schema }: GenOpts): Promise<string> {
-  const res = await fetch(`${BASE}/v1beta/models/${GEN_MODEL()}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key() },
-    body: JSON.stringify({
-      ...(system ? { system_instruction: { parts: [{ text: system }] } } : {}),
-      contents,
-      ...(schema ? { generationConfig: { responseMimeType: 'application/json', responseSchema: schema } } : {})
-    })
+  const k = key();
+  const body = JSON.stringify({
+    ...(system ? { system_instruction: { parts: [{ text: system }] } } : {}),
+    contents,
+    ...(schema ? { generationConfig: { responseMimeType: 'application/json', responseSchema: schema } } : {})
   });
+  let res = await fetch(`${BASE}/v1beta/models/${GEN_MODEL()}:generateContent`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k }, body
+  });
+  if (!res.ok && k.startsWith('AQ.')) {
+    // Chaves "AQ." são do Vertex AI (modo express): tenta o endpoint do Vertex antes de desistir.
+    const first = (await res.text()).slice(0, 160);
+    const vx = await fetch(`https://aiplatform.googleapis.com/v1/publishers/google/models/${GEN_MODEL()}:generateContent?key=${encodeURIComponent(k)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body
+    });
+    if (!vx.ok) throw new Error(`Gemini recusou a chave. AI Studio ${res.status}: ${first} | Vertex ${vx.status}: ${(await vx.text()).slice(0, 160)}`);
+    res = vx;
+  }
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const j = await res.json();
   return j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? '').join('') ?? '';

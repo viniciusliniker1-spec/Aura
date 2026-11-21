@@ -10,6 +10,7 @@ import {
   buildAutonomy, DEFAULT_AUTONOMY, localChat, localPanelSpec, panelFromSpec
 } from '../lib/local';
 import { loadJSON, saveJSON } from '../lib/storage';
+import { lastFunctionError, explainError } from '../lib/supabase';
 import { tap, success, notifyLocal } from '../lib/native';
 
 const LOCAL_KEY = 'aura.local.v4';
@@ -69,7 +70,7 @@ export interface AuraCtx {
   toggleAutonomy: (id: string) => void;
 
   handoff: HandoffState | null;
-  startHandoff: (url: string, task: string, fileName?: string | null) => Promise<void>;
+  startHandoff: (url: string, task: string, fileName?: string | null, focus?: boolean) => Promise<void>;
   approveHandoff: () => Promise<void>;
   toggleTakeover: () => Promise<void>;
   closeHandoff: () => Promise<void>;
@@ -201,7 +202,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setHandoff((h) => (h ? { ...h, ...patch } : h));
   }, []);
 
-  const startHandoff = useCallback(async (url: string, task: string, fileName?: string | null) => {
+  const startHandoff = useCallback(async (url: string, task: string, fileName?: string | null, focus = true) => {
     window.clearInterval(timerRef.current);
     const domain = cleanDomain(url);
     const cred = credentials.find((c) => domain.includes(c.domain.toLowerCase()) || c.domain.toLowerCase().includes(domain));
@@ -232,14 +233,16 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ]
     };
     setHandoff(base);
-    setSubview('browser');
+    if (focus) setSubview('browser');
 
     if (remote) {
       const res = await api.handoff.start({
         task, targetUrl: url, fileId: base.fileId, useVault, requireApproval, uploadFiles
       });
       if (!res) {
-        patchHandoff({ status: 'failed', error: 'Não consegui iniciar o navegador na nuvem. Confira as chaves do Browser Use e tente de novo.' });
+        const why = explainError(lastFunctionError.message) || 'Confira a chave do Browser Use.';
+        patchHandoff({ status: 'failed', error: `Não consegui iniciar o navegador na nuvem. ${why}` });
+        setChat((p) => [...p, { id: uuid(), role: 'assistant', text: `⚠️ Não consegui abrir o navegador: ${why}` }]);
         return;
       }
       patchHandoff({ id: res.id, liveUrl: res.liveUrl });
@@ -260,6 +263,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [credentials, files, autonomyMap, patchHandoff]);
 
   // Polling do backend enquanto a sessão remota está rodando
+  const reportedRef = useRef<Set<string>>(new Set());
   const hId = handoff?.id;
   const hStatus = handoff?.status;
   const hRemote = handoff?.remote;
@@ -280,6 +284,18 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
           status: r.status, error: r.error || undefined
         };
       });
+      if (r.status === 'awaiting_approval' || r.status === 'completed' || r.status === 'failed') {
+        const k = `${hId}:${r.status}`;
+        if (!reportedRef.current.has(k)) {
+          reportedRef.current.add(k);
+          const dom = (handoffRef.current?.url ?? '').split('/')[0];
+          const text = r.status === 'failed'
+            ? `⚠️ O navegador não conseguiu concluir em ${dom}: ${r.error || 'erro desconhecido'}`
+            : `${r.result?.trim() || `Terminei no navegador (${dom}).`}${r.status === 'awaiting_approval' ? '\n\nParei antes do envio final. Abra a sessão para revisar e aprovar.' : ''}`;
+          setChat((p) => [...p, { id: uuid(), role: 'assistant', text }]);
+          void api.data.chatAppend(text); // entra no histórico: a IA lembra do resultado nas próximas mensagens
+        }
+      }
       if (r.status === 'awaiting_approval') {
         void success();
         void notifyLocal('Aura precisa da sua aprovação', 'O navegador parou antes do envio final.');
@@ -449,7 +465,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let reply = `Salvo no projeto "${proj?.title ?? ''}" com contexto atualizado.`;
     if (remote) {
       const r = await api.chat.send(clean, id);
-      if (r?.reply) reply = r.reply;
+      reply = r?.reply ?? `⚠️ Não consegui falar com a IA.\n${explainError(lastFunctionError.message)}`;
     }
     setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, messages: [...p.messages, { role: 'assistant', text: reply }] } : p)));
   }, [projects]);
@@ -472,9 +488,14 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: uuid(), role: 'handoff_card', title: `Sessão · ${dom}`, domain: dom,
         task: res.handoff.task, file: res.handoff.fileName ?? null
       });
+      // A IA decidiu que a conversa exige o navegador: abre sozinha, sem tirar você do chat.
+      // Se já existe uma sessão em andamento, não a atropela: o cartão fica disponível para abrir manualmente.
+      const cur = handoffRef.current;
+      const busy = cur && ['running', 'awaiting_approval', 'takeover'].includes(cur.status);
+      if (!busy) void startHandoff(res.handoff.url, res.handoff.task, res.handoff.fileName ?? null, false);
     }
     if (res.cvRequest) await tailorCv(res.cvRequest.role, res.cvRequest.format);
-  }, [tailorCv]);
+  }, [tailorCv, startHandoff]);
 
   const sendMessage = useCallback(async (text: string) => {
     const clean = text.trim();
@@ -484,7 +505,17 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setChat((p) => [...p, { id: uuid(), role: 'user', text: clean }]);
     setSending(true);
     try {
-      const res = (remote ? await api.chat.send(clean) : null) ?? localChat(clean, memories.length, files);
+      let res: api.ChatResult | null;
+      if (remote) {
+        res = await api.chat.send(clean);
+        if (!res) {
+          // Com o backend ligado nunca mascaramos a falha com resposta pronta: mostramos o motivo real.
+          setChat((p) => [...p, { id: uuid(), role: 'assistant', text: `⚠️ Não consegui falar com a IA.\n${explainError(lastFunctionError.message)}` }]);
+          return;
+        }
+      } else {
+        res = localChat(clean, memories.length, files);
+      }
       const items: ChatItem[] = [];
       await handleChatResult(res, items);
       setChat((p) => [...p, ...items]);

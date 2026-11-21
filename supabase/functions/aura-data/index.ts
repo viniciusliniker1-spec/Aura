@@ -91,6 +91,15 @@ Deno.serve(handle(async (b) => {
       return json({ ok: true });
     }
 
+    case 'chat_append': {
+      // Resultado do navegador (ou aviso) entra no histórico para a IA lembrar nas próximas mensagens.
+      const text = String(b.text || '').slice(0, 4000);
+      if (!text) return json({ error: 'texto vazio' }, 400);
+      const { error } = await db.from('messages').insert({ project_id: null, role: 'assistant', content: text, metadata: { source: 'browser' } });
+      if (error) throw error;
+      return json({ ok: true });
+    }
+
     case 'setting_set': {
       if (!['cv_base_text'].includes(b.key)) return json({ error: 'chave não permitida' }, 400);
       const { error } = await db.from('app_settings').upsert({ key: b.key, value: b.value, updated_at: new Date().toISOString() });
