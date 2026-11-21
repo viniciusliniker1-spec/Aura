@@ -17,7 +17,8 @@ const brl = (n: number) => `R$ ${n.toFixed(2).replace('.', ',')}`;
 
 /* ============================ NAVEGADOR ============================ */
 const BrowserView: React.FC = () => {
-  const { handoff: h, startHandoff, approveHandoff, toggleTakeover, closeHandoff, files, remote, liveFullscreen, setLiveFullscreen } = useAura();
+  const { handoff: h, startHandoff, finishHandoff, approveHandoff, toggleTakeover, closeHandoff, files, remote, liveFullscreen, setLiveFullscreen } = useAura();
+  const [loginUrl, setLoginUrl] = useState('');
   const [url, setUrl] = useState('gupy.io');
   const [task, setTask] = useState('');
   const [file, setFile] = useState('');
@@ -37,6 +38,15 @@ const BrowserView: React.FC = () => {
             {files.map((f) => <option key={f.id} value={f.name}>📎 {f.name}</option>)}
           </select>
           <button type="submit" className={`w-full py-2.5 ${btnLight}`}>Executar no Navegador</button>
+        </form>
+      </div>
+
+      <div className="glass-card rounded-[28px] p-5 space-y-2.5">
+        <h3 className="font-serif text-xl text-white">entrar e guardar login</h3>
+        <p className="text-xs text-white/70">Abra um site, faça o seu login uma vez e o Aura passa a entrar já logado nas próximas vezes (como o Hark). A senha não passa pela IA.</p>
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const u = loginUrl.trim(); if (u) void startHandoff(u, `Entrar em ${u} e guardar o login`, null, true, { loginMode: true }); }}>
+          <input value={loginUrl} onChange={(e) => setLoginUrl(e.target.value)} placeholder="linkedin.com, gupy.io, seu banco…" className={`flex-1 ${input}`} />
+          <button type="submit" className={`px-4 py-2 ${btnLight}`}>Entrar</button>
         </form>
       </div>
 
@@ -68,6 +78,11 @@ const BrowserView: React.FC = () => {
             </div>
           )}
 
+          {h.remote && h.persistent !== undefined && (
+            <p className={`text-[11px] ${h.persistent ? 'text-emerald-300' : 'text-amber-300'}`}>
+              {h.persistent ? '🔒 Perfil persistente: os logins feitos aqui ficam guardados.' : `⚠️ Sem perfil persistente: o login não será guardado.${h.profileWarning ? ' ' + h.profileWarning : ''}`}
+            </p>
+          )}
           <div className="p-3 rounded-2xl bg-white/5 space-y-1 text-xs">
             <p className="text-white font-medium">{h.task}</p>
             <p className="text-amber-300 text-[11px]">🔐 {h.credUsed}</p>
@@ -88,9 +103,14 @@ const BrowserView: React.FC = () => {
                 <button type="button" onClick={() => void closeHandoff()} className="px-4 py-2.5 rounded-full bg-white/10 text-xs text-red-300">Cancelar</button>
               </>
             ) : (
-              <button type="button" onClick={() => void closeHandoff()} className="w-full py-2 rounded-full bg-white/10 text-xs text-white/80">
-                {finished ? 'Fechar sessão' : 'Cancelar sessão'}
-              </button>
+              <>
+                {h.status === 'takeover' && (
+                  <button type="button" onClick={() => void finishHandoff()} className={`flex-1 py-2 ${btnLight}`}>Guardar login e encerrar</button>
+                )}
+                <button type="button" onClick={() => void closeHandoff()} className={`${h.status === 'takeover' ? 'px-4' : 'w-full'} py-2 rounded-full bg-white/10 text-xs text-white/80`}>
+                  {finished ? 'Fechar sessão' : 'Cancelar sessão'}
+                </button>
+              </>
             )}
           </div>
         </div>

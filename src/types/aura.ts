@@ -82,6 +82,9 @@ export interface HandoffState {
   stepIndex: number;
   liveUrl: string | null;
   requireApproval: boolean;
+  loginMode?: boolean;
+  persistent?: boolean;
+  profileWarning?: string | null;
   error?: string;
 }
 

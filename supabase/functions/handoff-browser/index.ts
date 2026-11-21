@@ -5,6 +5,12 @@ import { decryptSecret } from '../_shared/crypto.ts';
 const BU = 'https://api.browser-use.com/api/v4';
 const KEEP_ALIVE = 1800;
 
+// Velocidade: bu-ultrafast é o modelo mais rápido do Browser Use. O padrão dos projetos novos é bu-4.0 com
+// raciocínio "alto" (bem mais lento). Troque com o secret BROWSER_USE_MODEL ('default' = padrão do projeto).
+const MODEL = Deno.env.get('BROWSER_USE_MODEL') || 'bu-ultrafast';
+// Janela do navegador na nuvem (LxA). Formato de tablet em pé: legível na Live View do celular.
+const VIEWPORT = (Deno.env.get('BROWSER_USE_VIEWPORT') || '820x1180').match(/^(\d{3,4})x(\d{3,4})$/);
+
 async function bu(path: string, init: { method?: string; body?: unknown } = {}) {
   const key = Deno.env.get('BROWSER_USE_API_KEY');
   if (!key) throw new Error('BROWSER_USE_API_KEY não configurada (supabase secrets set BROWSER_USE_API_KEY=...)');
@@ -18,6 +24,44 @@ async function bu(path: string, init: { method?: string; body?: unknown } = {}) 
   try { data = text ? JSON.parse(text) : null; } catch { /* corpo não-JSON */ }
   if (!res.ok) throw new Error(`Browser Use ${res.status}: ${(data?.detail ? JSON.stringify(data.detail) : text).slice(0, 300)}`);
   return data;
+}
+
+/**
+ * Perfil persistente = onde o Browser Use guarda cookies/logins entre sessões. Ordem: secret
+ * BROWSER_USE_DEFAULT_PROFILE_ID > perfil já criado (app_settings) > cria um novo agora.
+ */
+async function ensureProfile(db: ReturnType<typeof admin>): Promise<{ id: string | null; warning?: string }> {
+  const fromEnv = Deno.env.get('BROWSER_USE_DEFAULT_PROFILE_ID');
+  if (fromEnv) return { id: fromEnv };
+  const { data: row } = await db.from('app_settings').select('value').eq('key', 'browser_profile_id').maybeSingle();
+  if (typeof row?.value === 'string' && row.value) return { id: row.value };
+  try {
+    const p = await bu('/profiles', { body: { name: 'Aura' } });
+    if (p?.id) {
+      await db.from('app_settings').upsert({ key: 'browser_profile_id', value: p.id, updated_at: new Date().toISOString() });
+      return { id: p.id };
+    }
+    return { id: null, warning: 'O Browser Use não devolveu o ID do perfil.' };
+  } catch (e) {
+    return { id: null, warning: `Sem perfil persistente: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/** Encerra o navegador da sessão: é quando o Browser Use grava os cookies/login no perfil. */
+async function stopBrowser(sessionId: string | null) {
+  if (sessionId) await bu(`/browsers/${sessionId}`, { method: 'PATCH', body: { action: 'stop' } }).catch(() => null);
+}
+
+/** Cria a run; se o Browser Use recusar algum parâmetro opcional (modelo/janela), repete só com o básico. */
+async function createRun(full: Record<string, unknown>, minimal: Record<string, unknown>) {
+  try {
+    return await bu('/runs', { body: full });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/ 4(00|22)/.test(msg)) throw e;
+    console.warn('createRun: parâmetros opcionais recusados, repetindo no modo básico:', msg);
+    return await bu('/runs', { body: minimal });
+  }
 }
 
 /** Credencial do Cofre -> secretBindings (a IA só vê os apelidos; o valor é digitado no site permitido). */
@@ -78,11 +122,15 @@ Deno.serve(handle(async (b) => {
 
   /* ------------------------------ START ------------------------------ */
   if (b.action === 'start') {
-    const task = String(b.task || '').slice(0, 800);
     const targetUrl = String(b.targetUrl || '').slice(0, 300);
+    const loginMode = b.loginMode === true;
+    // loginMode: só abre o site e para na tela de login; quem entra é você (Tomar controle) e o login fica no perfil.
+    const task = loginMode
+      ? `Abra ${targetUrl} e pare na tela de login (ou na página inicial). NÃO faça login nem preencha nada. Termine agora.`
+      : String(b.task || '').slice(0, 800);
     if (!task || !targetUrl) return json({ error: 'task e targetUrl são obrigatórios' }, 400);
     const domain = cleanDomain(targetUrl);
-    const requireApproval = b.requireApproval !== false;
+    const requireApproval = loginMode ? true : b.requireApproval !== false;
 
     // Regras de autonomia gravadas no banco prevalecem sobre o que o app mandou.
     const { data: rules } = await db.from('autonomy_rules').select('category, mode');
@@ -109,15 +157,24 @@ Deno.serve(handle(async (b) => {
       }
     }
 
-    const profileId = Deno.env.get('BROWSER_USE_DEFAULT_PROFILE_ID');
-    const run = await bu('/runs', {
-      body: {
-        task: buildTask({ task, targetUrl, hasLogin: bindings.length > 0, files: attached, requireApproval }),
-        browserSettings: { ...(profileId ? { profileId } : {}), proxyCountryCode: 'br' },
-        ...(bindings.length ? { secretBindings: bindings } : {}),
-        keepAlive: KEEP_ALIVE
-      }
-    });
+    const profile = await ensureProfile(db);
+    const taskText = loginMode ? task : buildTask({ task, targetUrl, hasLogin: bindings.length > 0, files: attached, requireApproval });
+    const common = {
+      task: taskText,
+      ...(bindings.length ? { secretBindings: bindings } : {}),
+      keepAlive: KEEP_ALIVE
+    };
+    const run = await createRun(
+      {
+        ...common,
+        ...(MODEL !== 'default' ? { model: MODEL } : {}),
+        browserSettings: {
+          ...(profile.id ? { profileId: profile.id } : {}),
+          ...(VIEWPORT ? { screenWidth: Number(VIEWPORT[1]), screenHeight: Number(VIEWPORT[2]) } : {})
+        }
+      },
+      { ...common, ...(profile.id ? { browserSettings: { profileId: profile.id } } : {}) }
+    );
 
     const { data: row, error } = await db.from('handoff_sessions').insert({
       task_prompt: task, target_url: targetUrl, external_session_id: run.id, bu_session_id: run.sessionId,
@@ -125,7 +182,7 @@ Deno.serve(handle(async (b) => {
     }).select('id').single();
     if (error) throw error;
 
-    return json({ id: row.id, liveUrl: null, usedVault: Boolean(label), requireApproval });
+    return json({ id: row.id, liveUrl: null, usedVault: Boolean(label), requireApproval, persistent: Boolean(profile.id), profileWarning: profile.warning ?? null });
   }
 
   /* Demais ações operam sobre uma sessão existente */
@@ -167,6 +224,8 @@ Deno.serve(handle(async (b) => {
       mapped = 'cancelled';
     }
     await db.from('handoff_sessions').update({ status: mapped, live_url: liveUrl }).eq('id', s.id);
+    // Fim da tarefa (sem aprovação pendente): encerra o navegador para o Browser Use gravar o login no perfil.
+    if (mapped === 'completed' || mapped === 'failed') await stopBrowser(s.bu_session_id);
     return json({ status: mapped, liveUrl, steps: stepsFrom(events), result, error });
   }
 
@@ -186,6 +245,15 @@ Deno.serve(handle(async (b) => {
   }
   if (b.action === 'resume') {
     await followUp(`O usuário resolveu a etapa manual (2FA/CAPTCHA). Continue de onde a página está agora e conclua a tarefa original: ${s.task_prompt}`, 'prepare');
+    return json({ ok: true });
+  }
+
+  /* ------------------------------ FINISH ------------------------------ */
+  if (b.action === 'finish') {
+    // "Guardar login e encerrar": para o navegador (o Browser Use grava cookies/login no perfil) e fecha a sessão.
+    await bu(`/runs/${s.external_session_id}/cancel`, { method: 'POST' }).catch(() => null);
+    await stopBrowser(s.bu_session_id);
+    await db.from('handoff_sessions').update({ status: 'completed' }).eq('id', s.id);
     return json({ ok: true });
   }
 

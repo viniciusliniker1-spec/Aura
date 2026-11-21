@@ -197,7 +197,7 @@ export const Toast: React.FC = () => {
 
 /** Live View em tela cheia, com "Tomar controle" / "Devolver à IA" sempre à mão. */
 export const LiveViewOverlay: React.FC = () => {
-  const { handoff: h, liveFullscreen, setLiveFullscreen, approveHandoff, toggleTakeover, closeHandoff } = useAura();
+  const { handoff: h, liveFullscreen, setLiveFullscreen, approveHandoff, toggleTakeover, closeHandoff, finishHandoff } = useAura();
   const [busy, setBusy] = useState(false);
   if (!liveFullscreen || !h) return null;
 
@@ -237,15 +237,28 @@ export const LiveViewOverlay: React.FC = () => {
       </div>
 
       <div className="shrink-0 px-3 pt-2.5 bg-[#0E1014] space-y-2" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-        {mine && <p className="text-[11px] text-amber-200/90 text-center">A IA está pausada. Faça login, 2FA ou CAPTCHA e toque em "Devolver à IA".</p>}
+        {mine && !h.loginMode && (
+          <button type="button" onClick={() => void finishHandoff()} className="w-full text-[11px] text-white/70 underline underline-offset-2">Guardar este login e encerrar a sessão</button>
+        )}
+        {mine && (
+          <p className="text-[11px] text-amber-200/90 text-center">
+            {h.loginMode ? 'Faça o login no site. Quando terminar, toque em "Guardar login e fechar".' : 'A IA está pausada. Faça login, 2FA ou CAPTCHA e toque em "Devolver à IA".'}
+          </p>
+        )}
         <div className="flex gap-2">
           {finished ? (
             <button type="button" onClick={() => void closeHandoff()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium">Fechar sessão</button>
           ) : mine ? (
             <>
-              <button type="button" disabled={busy} onClick={() => void swap()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium inline-flex items-center justify-center gap-2 disabled:opacity-60">
-                <Check className="w-4 h-4" /> Devolver à IA
-              </button>
+              {h.loginMode ? (
+                <button type="button" onClick={() => void finishHandoff()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium inline-flex items-center justify-center gap-2">
+                  <Check className="w-4 h-4" /> Guardar login e fechar
+                </button>
+              ) : (
+                <button type="button" disabled={busy} onClick={() => void swap()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium inline-flex items-center justify-center gap-2 disabled:opacity-60">
+                  <Check className="w-4 h-4" /> Devolver à IA
+                </button>
+              )}
               <button type="button" onClick={() => void closeHandoff()} className="px-4 rounded-full bg-white/10 text-sm text-red-300">Cancelar</button>
             </>
           ) : h.status === 'awaiting_approval' ? (
