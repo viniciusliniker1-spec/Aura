@@ -70,6 +70,8 @@ export interface AuraCtx {
   toggleAutonomy: (id: string) => void;
 
   handoff: HandoffState | null;
+  enginePref: api.EnginePref;
+  setEnginePref: (p: api.EnginePref) => void;
   startHandoff: (url: string, task: string, fileName?: string | null, focus?: boolean, opts?: { connect?: boolean }) => Promise<void>;
   submitLogin: (sessionId: string, c: { username: string; password: string; remember: boolean; domain: string }) => Promise<boolean>;
   finishHandoff: () => Promise<void>;
@@ -113,6 +115,10 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [cvBase, setCvBaseState] = useState('');
   const [handoff, setHandoff] = useState<HandoffState | null>(null);
   const [liveFullscreen, setLiveFullscreen] = useState(false);
+  const [enginePref, setEnginePrefState] = useState<api.EnginePref>(() => {
+    try { const v = localStorage.getItem('aura.engine'); return v === 'agent' || v === 'browser-use' ? v : 'auto'; } catch { return 'auto'; }
+  });
+  const setEnginePref = useCallback((p: api.EnginePref) => { setEnginePrefState(p); try { localStorage.setItem('aura.engine', p); } catch { /* sem armazenamento */ } }, []);
   const [vaultSheet, setVaultSheet] = useState<null | 'manual' | 'finish'>(null);
 
   const showToast = useCallback((m: string) => {
@@ -248,16 +254,33 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (focus) setSubview('browser');
 
     if (remote) {
-      const res = await api.handoff.start({
-        task, targetUrl: url, fileId: base.fileId, useVault, requireApproval, uploadFiles, connect
-      });
-      if (!res) {
-        const why = explainError(lastFunctionError.message) || 'Confira a chave do Browser Use.';
-        patchHandoff({ status: 'failed', error: `Não consegui iniciar o navegador na nuvem. ${why}` });
+      // 1) Agente próprio (Gemini). Se não conseguir abrir o navegador, cai sozinho para o Browser Use.
+      let res: api.HandoffStart | null = null;
+      let engine: api.Engine = 'browser-use';
+      let agentWhy = '';
+      if (enginePref !== 'browser-use') {
+        const a = await api.agent.start({ task, targetUrl: url, useVault, requireApproval, connect, engine: enginePref });
+        if (a && a.engine === 'agent' && a.id) { res = a; engine = 'agent'; }
+        else agentWhy = lastFunctionError.message;
+      }
+      if (!res && enginePref === 'agent') {
+        const why = explainError(agentWhy) || 'O agente do Aura não está disponível.';
+        patchHandoff({ status: 'failed', error: `Não consegui iniciar o agente. ${why}` });
         setChat((p) => [...p, { id: uuid(), role: 'assistant', text: `⚠️ Não consegui abrir o navegador: ${why}` }]);
         return;
       }
-      patchHandoff({ id: res.id, ready: true, liveUrl: res.liveUrl, persistent: res.persistent, profileWarning: res.profileWarning ?? null });
+      // 2) Browser Use
+      if (!res) {
+        res = await api.handoff.start({ task, targetUrl: url, fileId: base.fileId, useVault, requireApproval, uploadFiles, connect });
+        if (!res) {
+          const why = explainError(lastFunctionError.message) || 'Confira a chave do Browser Use.';
+          patchHandoff({ status: 'failed', error: `Não consegui iniciar o navegador na nuvem. ${why}` });
+          setChat((p) => [...p, { id: uuid(), role: 'assistant', text: `⚠️ Não consegui abrir o navegador: ${why}` }]);
+          return;
+        }
+        if (enginePref === 'auto' && agentWhy) console.warn('[aura] agente próprio indisponível, usando Browser Use:', agentWhy);
+      }
+      patchHandoff({ id: res.id, ready: true, engine, liveUrl: res.liveUrl, persistent: res.persistent, profileWarning: res.profileWarning ?? null });
       return;
     }
     // Simulação local (sem Supabase / Browser Use)
@@ -272,7 +295,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { ...h, stepIndex: next };
       });
     }, 800);
-  }, [credentials, files, autonomyMap, patchHandoff]);
+  }, [credentials, files, autonomyMap, patchHandoff, enginePref]);
 
   // Polling do backend enquanto a sessão remota está rodando
   const reportedRef = useRef<Set<string>>(new Set());
@@ -284,7 +307,8 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!hRemote || !hReady || !hId || (hStatus !== 'running' && hStatus !== 'takeover')) return;
     let alive = true;
     const tick = async () => {
-      const r = await api.handoff.status(hId);
+      const eng = handoffRef.current?.engine ?? 'browser-use';
+      const r = await api.engineApi(eng).poll(hId, handoffRef.current?.status === 'running');
       if (!alive || !r) return;
       setHandoff((h) => {
         if (!h || h.id !== hId) return h;
@@ -294,7 +318,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ...h, liveUrl: r.liveUrl || h.liveUrl,
           steps: r.steps.length ? r.steps : h.steps,
           stepIndex: r.steps.length ? r.steps.length - 1 : h.stepIndex,
-          status: r.status, error: r.error || undefined, loginDomain: r.loginDomain || h.loginDomain
+          status: r.status, error: r.error || undefined, loginDomain: r.loginDomain || h.loginDomain, question: r.question || undefined
         };
       });
       // A IA parou pedindo algo ao usuário: login -> cofre no chat; 2FA/CAPTCHA -> tomar controle.
@@ -308,6 +332,17 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
             : { id: uuid(), role: 'manual_request', sessionId: hId }]);
           void success();
           void notifyLocal(r.status === 'needs_login' ? 'O Aura precisa do seu login' : 'O Aura precisa da sua ajuda', r.status === 'needs_login' ? `Informe o login de ${dom} no chat.` : 'O site pediu uma verificação manual.');
+        }
+        return;
+      }
+      if (r.status === 'awaiting_approval' && r.question) {
+        // Agente: a IA diz exatamente o que vai enviar; o chat mostra o cartão de aprovação.
+        const k = `${hId}:approval`;
+        if (!reportedRef.current.has(k)) {
+          reportedRef.current.add(k);
+          setChat((p) => [...p, { id: uuid(), role: 'approval_request', sessionId: hId, summary: r.question! }]);
+          void success();
+          void notifyLocal('O Aura precisa da sua aprovação', r.question!.slice(0, 120));
         }
         return;
       }
@@ -328,17 +363,29 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
         void notifyLocal('Aura precisa da sua aprovação', 'O navegador parou antes do envio final.');
       }
     };
-    const iv = window.setInterval(tick, 3000);
-    void tick();
-    return () => { alive = false; window.clearInterval(iv); };
+    // Agente: passos encadeados (cada chamada já leva alguns segundos). Browser Use: consulta a cada 3 s.
+    const loop = async () => {
+      while (alive) {
+        const t0 = Date.now();
+        await tick();
+        if (!alive) break;
+        const agentRunning = handoffRef.current?.engine === 'agent' && handoffRef.current?.status === 'running';
+        const gap = agentRunning ? 150 : Math.max(500, 3000 - (Date.now() - t0));
+        await new Promise((res) => setTimeout(res, gap));
+      }
+    };
+    void loop();
+    return () => { alive = false; };
   }, [hId, hStatus, hRemote, hReady]);
 
   const approveHandoff = useCallback(async () => {
     const h = handoffRef.current;
     if (!h) return;
     if (h.remote) {
-      const r = await api.handoff.approve(h.id);
+      const r = await api.engineApi(h.engine ?? 'browser-use').approve(h.id);
       if (!r) { showToast('Não consegui enviar a aprovação'); return; }
+      reportedRef.current.delete(`${h.id}:approval`);
+      setChat((p) => p.map((m) => (m.role === 'approval_request' && m.sessionId === h.id ? { ...m, done: 'approved' as const } : m)));
       patchHandoff({ status: 'running', steps: [...h.steps, 'Aprovado: executando o envio final…'] });
     } else {
       patchHandoff({ status: 'completed' });
@@ -355,7 +402,8 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const entering = h.status !== 'takeover';
       if (h.remote) {
-        const r = entering ? await api.handoff.takeover(h.id) : await api.handoff.resume(h.id);
+        const e = api.engineApi(h.engine ?? 'browser-use');
+        const r = entering ? await e.takeover(h.id) : await e.resume(h.id);
         if (!r) { showToast('Não consegui trocar o controle'); return; }
         patchHandoff({ status: entering ? 'takeover' : 'running' });
       } else {
@@ -373,7 +421,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const h = handoffRef.current;
     if (!h) return;
     if (h.remote) {
-      const r = await api.handoff.finish(h.id);
+      const r = await api.engineApi(h.engine ?? 'browser-use').finish(h.id);
       if (!r) { showToast('Não consegui encerrar a sessão'); return; }
     }
     patchHandoff({ status: 'completed' });
@@ -399,7 +447,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const h = handoffRef.current;
     if (!h || h.id !== sessionId) { showToast('Esta sessão já foi encerrada'); return false; }
     if (h.remote) {
-      const r = await api.handoff.provideLogin({ id: h.id, ...c });
+      const r = await api.engineApi(h.engine ?? 'browser-use').provideLogin({ id: h.id, ...c });
       if (!r) { showToast('Não consegui enviar o login'); return false; }
     }
     reportedRef.current.delete(`${h.id}:needs_login`); // se o login falhar, o cartão aparece de novo
@@ -413,7 +461,8 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const closeHandoff = useCallback(async () => {
     const h = handoffRef.current;
     window.clearInterval(timerRef.current);
-    if (h?.remote && h.status !== 'completed') await api.handoff.cancel(h.id);
+    if (h?.remote && h.status !== 'completed') await api.engineApi(h.engine ?? 'browser-use').cancel(h.id);
+    if (h) setChat((p) => p.map((m) => (m.role === 'approval_request' && m.sessionId === h.id && !m.done ? { ...m, done: 'cancelled' as const } : m)));
     setLiveFullscreen(false);
     setVaultSheet(null);
     setHandoff(null);
@@ -620,7 +669,7 @@ export const AuraProvider: React.FC<{ children: React.ReactNode }> = ({ children
     files, uploadFile, deleteFile, tailorCv, cvBase, setCvBase,
     panels, updatePanel, createPanel, deletePanel,
     autonomy, toggleAutonomy,
-    handoff, startHandoff, submitLogin, finishHandoff, requestFinish, vaultSheet, openVaultSheet, closeVaultSheet, approveHandoff, toggleTakeover, closeHandoff, liveFullscreen, setLiveFullscreen
+    enginePref, setEnginePref, handoff, startHandoff, submitLogin, finishHandoff, requestFinish, vaultSheet, openVaultSheet, closeVaultSheet, approveHandoff, toggleTakeover, closeHandoff, liveFullscreen, setLiveFullscreen
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };

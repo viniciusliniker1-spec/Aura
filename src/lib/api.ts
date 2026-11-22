@@ -159,6 +159,7 @@ export interface HandoffStatusResult {
   result?: string | null;
   error?: string | null;
   loginDomain?: string | null;
+  question?: string | null;
 }
 
 export const handoff = {
@@ -173,6 +174,41 @@ export const handoff = {
   finish: (id: string) => callFunction<{ ok: boolean }>('handoff-browser', { action: 'finish', id }),
   cancel: (id: string) => callFunction<{ ok: boolean }>('handoff-browser', { action: 'cancel', id })
 };
+
+/* ------------------------------------------------------------------ */
+/* aura-agent: agente próprio (Gemini computer-use dirigindo o navegador) */
+/* ------------------------------------------------------------------ */
+export type Engine = 'agent' | 'browser-use';
+export type EnginePref = 'auto' | 'agent' | 'browser-use';
+export interface AgentStart extends HandoffStart { engine: 'agent' | 'browser-use' }
+
+export const agent = {
+  start: (p: { task: string; targetUrl: string; useVault: boolean; requireApproval: boolean; connect?: boolean; engine?: EnginePref }) =>
+    callFunction<AgentStart>('aura-agent', { action: 'start', ...p }),
+  step: (id: string) => callFunction<HandoffStatusResult>('aura-agent', { action: 'step', id }),
+  status: (id: string) => callFunction<HandoffStatusResult>('aura-agent', { action: 'status', id }),
+  approve: (id: string) => callFunction<{ ok: boolean }>('aura-agent', { action: 'approve', id }),
+  takeover: (id: string) => callFunction<{ ok: boolean; liveUrl: string | null }>('aura-agent', { action: 'takeover', id }),
+  resume: (id: string) => callFunction<{ ok: boolean }>('aura-agent', { action: 'resume', id }),
+  provideLogin: (p: { id: string; username: string; password: string; remember: boolean; domain: string }) =>
+    callFunction<{ ok: boolean }>('aura-agent', { action: 'provide_login', ...p }),
+  finish: (id: string) => callFunction<{ ok: boolean }>('aura-agent', { action: 'finish', id }),
+  cancel: (id: string) => callFunction<{ ok: boolean }>('aura-agent', { action: 'cancel', id })
+};
+
+/** Mesmas operações nos dois motores: o resto do app não precisa saber qual está em uso. */
+export const engineApi = (e: Engine) => e === 'agent'
+  ? {
+    // No agente, "running" avança a tarefa (um lote de passos por chamada); fora disso só consulta.
+    poll: (id: string, running: boolean) => (running ? agent.step(id) : agent.status(id)),
+    approve: agent.approve, takeover: agent.takeover, resume: agent.resume,
+    provideLogin: agent.provideLogin, finish: agent.finish, cancel: agent.cancel
+  }
+  : {
+    poll: (id: string, _running: boolean) => handoff.status(id),
+    approve: handoff.approve, takeover: handoff.takeover, resume: handoff.resume,
+    provideLogin: handoff.provideLogin, finish: handoff.finish, cancel: handoff.cancel
+  };
 
 /* ------------------------------------------------------------------ */
 /* proactive-sync                                                      */

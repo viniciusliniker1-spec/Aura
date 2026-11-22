@@ -89,11 +89,13 @@ export const InicioView: React.FC = () => {
 
 /* ================================ CHAT ================================ */
 export const ChatView: React.FC = () => {
-  const { chat, sending, startHandoff, handoff, files, openSubview, submitLogin, toggleTakeover } = useAura();
+  const { chat, sending, startHandoff, handoff, files, openSubview, submitLogin, toggleTakeover, approveHandoff, closeHandoff } = useAura();
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [chat.length, sending, chat[chat.length - 1]?.id]);
 
-  const pill = handoff ? `Handoff · ${handoff.url.split('/')[0]}` : 'Gerenciar envio de CV · Gupy';
+  // Com o agente próprio, a etiqueta mostra, ao vivo, o que a IA está fazendo agora.
+  const cur = handoff?.engine === 'agent' && handoff.status === 'running' ? handoff.steps[handoff.stepIndex] : '';
+  const pill = handoff ? `${handoff.url.split('/')[0]}${cur ? ' · ' + (cur.length > 34 ? cur.slice(0, 33) + '…' : cur) : ''}` : 'Gerenciar envio de CV · Gupy';
   return (
     <section className="space-y-3">
       <div className="flex justify-end">
@@ -111,6 +113,20 @@ export const ChatView: React.FC = () => {
             return (
               <div key={m.id} className="glass-card rounded-[24px] p-4 shadow-lg animate-in">
                 <LoginForm domain={m.domain} onSubmit={(c) => submitLogin(m.sessionId, c)} onManual={() => void toggleTakeover()} />
+              </div>
+            );
+          }
+          if (m.role === 'approval_request') {
+            if (m.done) return <div key={m.id} className="obsidian-card rounded-[22px] px-4 py-3 text-xs text-white/70 w-[82%] animate-in">{m.done === 'approved' ? '✅ Envio aprovado. Continuando…' : 'Envio cancelado.'}</div>;
+            return (
+              <div key={m.id} className="glass-card rounded-[24px] p-4 space-y-3 shadow-lg animate-in">
+                <p className="text-[11px] uppercase tracking-wide text-amber-200/90">Preciso da sua aprovação</p>
+                <p className="text-sm text-white/95 whitespace-pre-wrap">{m.summary}</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => void approveHandoff()} className="flex-1 py-3 rounded-full btn-light text-sm font-medium">✓ Aprovar e enviar</button>
+                  <button type="button" onClick={() => openSubview('browser')} className="px-4 rounded-full bg-white/10 text-sm text-white">Ver</button>
+                  <button type="button" onClick={() => void closeHandoff()} className="px-4 rounded-full bg-white/10 text-sm text-red-300">Cancelar</button>
+                </div>
               </div>
             );
           }

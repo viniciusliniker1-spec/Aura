@@ -247,6 +247,7 @@ export const LiveViewOverlay: React.FC = () => {
         {mine && (
           <button type="button" onClick={() => requestFinish()} className="w-full text-[11px] text-white/70 underline underline-offset-2">Guardar este login e encerrar a sessão</button>
         )}
+        {h.status === 'awaiting_approval' && h.question && <p className="text-xs text-sky-100 text-center whitespace-pre-wrap">{h.question}</p>}
         {mine && (
           <p className="text-[11px] text-amber-200/90 text-center">
             A IA está pausada. Faça a verificação (2FA, CAPTCHA) e toque em "Devolver à IA".

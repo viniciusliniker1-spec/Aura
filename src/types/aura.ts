@@ -25,7 +25,9 @@ export type ChatItem =
   /** A IA parou porque o site pede login: o chat mostra o cofre para você preencher. */
   | { id: string; role: 'login_request'; domain: string; sessionId: string; done?: boolean }
   /** 2FA/CAPTCHA: só nesse caso você assume o navegador. */
-  | { id: string; role: 'manual_request'; sessionId: string; done?: boolean };
+  | { id: string; role: 'manual_request'; sessionId: string; done?: boolean }
+  /** A IA vai fazer um envio/ação sensível: o chat pede a sua aprovação. */
+  | { id: string; role: 'approval_request'; sessionId: string; summary: string; done?: 'approved' | 'cancelled' };
 
 export interface ProjectMessage {
   role: 'user' | 'assistant';
@@ -91,6 +93,10 @@ export interface HandoffState {
   loginDomain?: string;
   /** Sessão remota só é consultada depois que o servidor devolveu o ID real. */
   ready?: boolean;
+  /** Motor em uso: agente próprio do Aura (Gemini) ou Browser Use. */
+  engine?: 'agent' | 'browser-use';
+  /** O que a IA vai fazer (pedido de aprovação). */
+  question?: string;
   persistent?: boolean;
   profileWarning?: string | null;
   error?: string;

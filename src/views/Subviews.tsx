@@ -18,7 +18,7 @@ const brl = (n: number) => `R$ ${n.toFixed(2).replace('.', ',')}`;
 
 /* ============================ NAVEGADOR ============================ */
 const BrowserView: React.FC = () => {
-  const { handoff: h, startHandoff, submitLogin, requestFinish, approveHandoff, toggleTakeover, closeHandoff, files, remote, liveFullscreen, setLiveFullscreen } = useAura();
+  const { enginePref, setEnginePref, handoff: h, startHandoff, submitLogin, requestFinish, approveHandoff, toggleTakeover, closeHandoff, files, remote, liveFullscreen, setLiveFullscreen } = useAura();
   const [loginUrl, setLoginUrl] = useState('');
   const [url, setUrl] = useState('gupy.io');
   const [task, setTask] = useState('');
@@ -40,6 +40,15 @@ const BrowserView: React.FC = () => {
           </select>
           <button type="submit" className={`w-full py-2.5 ${btnLight}`}>Executar no Navegador</button>
         </form>
+        {remote && (
+          <div className="flex items-center gap-1.5 pt-1 text-[11px] text-white/55">
+            <span>Motor:</span>
+            {([['auto', 'Automático'], ['agent', 'Agente Aura'], ['browser-use', 'Browser Use']] as const).map(([v, label]) => (
+              <button key={v} type="button" onClick={() => setEnginePref(v)}
+                className={`px-2.5 py-1 rounded-full ${enginePref === v ? 'bg-[#F2F3F5] text-[#16181E] font-medium' : 'bg-white/10 text-white/75'}`}>{label}</button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="glass-card rounded-[28px] p-5 space-y-2.5">
@@ -89,7 +98,20 @@ const BrowserView: React.FC = () => {
             <p className="text-amber-300 text-[11px]">🔐 {h.credUsed}</p>
             {h.fileName && <p className="text-emerald-300 text-[11px]">📎 Upload: {h.fileName}</p>}
           </div>
-          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-white transition-all duration-300" style={{ width: `${h.status === 'completed' ? 100 : pct}%` }} /></div>
+          {h.engine === 'agent' ? (
+            h.steps.length > 0 && (
+              <ul className="space-y-1 text-[11px] text-white/55">
+                {h.steps.slice(-6).map((st, i, arr) => {
+                  const live = i === arr.length - 1 && h.status === 'running';
+                  return <li key={`${i}-${st}`} className={live ? 'text-white' : ''}>{live ? '●' : '✓'} {st}</li>;
+                })}
+              </ul>
+            )
+          ) : (
+            <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-white transition-all duration-300" style={{ width: `${h.status === 'completed' ? 100 : pct}%` }} /></div>
+          )}
+          {h.engine && h.remote && <p className="text-[10px] text-white/35">Motor: {h.engine === 'agent' ? 'Agente Aura (Gemini)' : 'Browser Use'}</p>}
+          {h.status === 'awaiting_approval' && h.question && <p className="text-xs text-sky-200 whitespace-pre-wrap">Vai enviar: {h.question}</p>}
           {h.status === 'needs_login' && (
             <div className="rounded-2xl bg-white/5 p-3.5">
               <LoginForm domain={h.loginDomain || h.url.split('/')[0]} onSubmit={(c) => submitLogin(h.id, c)} onManual={() => void toggleTakeover()} />
