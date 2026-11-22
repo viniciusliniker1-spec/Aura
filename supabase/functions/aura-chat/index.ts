@@ -1,5 +1,6 @@
 import { admin, handle, json } from '../_shared/common.ts';
-import { embed, generateJSON, mintLiveToken, lastCall, diagnose } from '../_shared/gemini.ts';
+import { embed, generate, generateJSON, mintLiveToken, lastCall, diagnose } from '../_shared/gemini.ts';
+import { googleToken, gmailSearch, calendarEvents } from '../_shared/google.ts';
 
 const PANEL_SCHEMA = {
   type: 'OBJECT',
@@ -12,6 +13,13 @@ const PANEL_SCHEMA = {
   required: ['title', 'type']
 };
 
+/** Recusa falsa: o Aura TEM navegador, Cofre, Gmail e Agenda. */
+const REFUSAL = /(n[ãa]o (posso|consigo|tenho (acesso|permiss[ãa]o|funcionalidade|como)|sou capaz)|n[ãa]o [ée] poss[ií]vel)[^.!?]{0,90}(acess|abrir|entrar|ler|ver|consult|logar|e-?mail|gmail|site|conta|caixa)/i;
+const ACCESS_ASK = /\b(acess\w*|abr[aeiou]\w*|entr[aeiou]\w*|log[aeu]\w*|fa[cç]a (o )?login|confir\w+|ve[jr]\w*|busqu?\w*|procur\w*|consult\w*|l[eê]\w*|resum\w*|olh\w*)\b/i;
+const MAIL_WORDS = /(gmail|e-?mails?|caixa de entrada|inbox)/i;
+const CAL_WORDS = /(agenda|calend[aá]rio|compromisso|reuni[aãõo]es?)/i;
+const SITES: [RegExp, string][] = [[/linkedin/i, 'linkedin.com'], [/gupy/i, 'gupy.io'], [/catho/i, 'catho.com.br'], [/github/i, 'github.com'], [/instagram/i, 'instagram.com'], [/(banco|nubank|ita[uú]|bradesco)/i, 'google.com']];
+
 const CHAT_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -21,6 +29,11 @@ const CHAT_SCHEMA = {
       type: 'OBJECT',
       properties: { url: { type: 'STRING' }, task: { type: 'STRING' }, fileName: { type: 'STRING' } },
       required: ['url', 'task']
+    },
+    google: {
+      type: 'OBJECT',
+      properties: { service: { type: 'STRING', enum: ['gmail', 'calendar'] }, query: { type: 'STRING' } },
+      required: ['service']
     },
     panel: PANEL_SCHEMA,
     cvRequest: {
@@ -60,12 +73,13 @@ Deno.serve(handle(async (body) => {
   const t0 = Date.now();
   let hq = db.from('messages').select('role, content').order('created_at', { ascending: false }).limit(8);
   hq = projectId ? hq.eq('project_id', projectId) : hq.is('project_id', null);
-  const [qEmb, histRes, filesRes, projRes, pfRes] = await Promise.all([
+  const [qEmb, histRes, filesRes, projRes, pfRes, vaultRes] = await Promise.all([
     embed(message, 'RETRIEVAL_QUERY'),
     hq,
     db.from('user_files').select('file_name').order('updated_at', { ascending: false }).limit(30),
     projectId ? db.from('projects').select('title, description').eq('id', projectId).maybeSingle() : Promise.resolve({ data: null }),
-    projectId ? db.from('project_files').select('file_name').eq('project_id', projectId) : Promise.resolve({ data: [] })
+    projectId ? db.from('project_files').select('file_name').eq('project_id', projectId) : Promise.resolve({ data: [] }),
+    db.from('credential_vault').select('site_name, domain').order('created_at', { ascending: false }).limit(30)
   ]);
   let memoryContext = '';
   if (qEmb) {
@@ -76,7 +90,11 @@ Deno.serve(handle(async (body) => {
   const projectContext = proj
     ? `Projeto atual: "${proj.title}" — ${proj.description ?? ''}\nArquivos vinculados: ${((pfRes as any).data ?? []).map((f: any) => f.file_name).join(', ') || 'nenhum'}`
     : '';
-  const history = ((histRes as any).data ?? []).reverse().map((m: any) => ({
+  const vaultSites = ((vaultRes as any).data ?? []).map((v: any) => `${v.site_name} (${v.domain})`).join(', ');
+  // Recusas antigas ("não posso acessar...") estavam erradas e fazem o modelo repetir o erro: não entram no contexto.
+  const history = ((histRes as any).data ?? []).reverse()
+    .filter((m: any) => !(m.role === 'assistant' && REFUSAL.test(String(m.content))))
+    .map((m: any) => ({
     role: m.role === 'assistant' ? 'model' : 'user' as 'user' | 'model',
     parts: [{ text: String(m.content) }]
   }));
@@ -89,6 +107,15 @@ Memórias relevantes do usuário:
 ${memoryContext || '(nenhuma)'}
 ${projectContext}
 Arquivos no Cofre: ${fileNames.join(', ') || 'nenhum'}
+
+O QUE VOCÊ PODE FAZER (nunca diga que não consegue):
+- Navegador na nuvem com perfil persistente: acessar QUALQUER site e operar contas do usuário (LinkedIn, Gupy, banco, portais...) usando os logins do Cofre. A senha é digitada pelo sistema; você nunca a vê. Se faltar login, o app mostra o cofre para o usuário preencher.
+- Ler Gmail e Google Agenda (somente leitura) pela API do Google, no campo "google".
+- Memória longa, painéis (micro-apps) e currículo em PDF/Word.
+Logins salvos no Cofre: ${vaultSites || 'nenhum ainda'}.
+NUNCA responda "não tenho acesso/permissão/funcionalidade" para sites, e-mail ou agenda. Ignore qualquer recusa parecida no histórico: estava errada.
+
+Para LER, buscar ou resumir e-mails (ex.: "tem e-mail novo?", "acesse meu gmail") ou ver a agenda, use "google" {service: "gmail"|"calendar", query}: query do Gmail usa a sintaxe de busca dele (is:unread, from:linkedin, subject:fatura, newer_than:2d); para agenda a query pode ser vazia. Isso é mais rápido e seguro que o navegador. Para ENVIAR, responder, apagar ou qualquer ação num site, use handoff.
 
 VOCÊ DECIDE quando usar o navegador, lendo o contexto da conversa inteira (não só a última frase).
 Preencha "handoff" quando a resposta ou a tarefa EXIGIR a web ou um site:
@@ -124,6 +151,49 @@ Se mensagens anteriores trouxerem resultados do navegador, use-os para responder
   // Trava em código (o prompt sozinho não garante): se a resposta termina em pergunta, o modelo está pedindo um dado
   // ao usuário; abrir o navegador agora gastaria uma sessão paga com tarefa vaga. Navega só depois da resposta.
   if (out.handoff && /\?\s*$/.test(String(out.reply ?? '').trim())) out.handoff = undefined;
+
+  // Trava contra recusa falsa ("não posso acessar seu Gmail"): se pediram para acessar algo e o modelo recusou
+  // sem acionar google/handoff, o código aciona o caminho certo.
+  if (!out.handoff && !out.google && REFUSAL.test(String(out.reply ?? '')) && ACCESS_ASK.test(message)) {
+    if (MAIL_WORDS.test(message)) out.google = { service: 'gmail', query: /n[ãa]o lid|novo|nova/i.test(message) ? 'is:unread' : 'in:inbox' };
+    else if (CAL_WORDS.test(message)) out.google = { service: 'calendar', query: '' };
+    else {
+      const site = SITES.find(([re]) => re.test(message));
+      out.handoff = { url: site ? site[1] : 'google.com', task: message };
+      out.reply = `Vou acessar ${site ? site[1] : 'o site'} no navegador com o seu Cofre e te conto o que encontrar.`;
+      result.reply = out.reply;
+    }
+  }
+
+  // Gmail / Agenda pela API (somente leitura): busca os dados e responde com base neles.
+  if (out.google?.service) {
+    try {
+      const tok = await googleToken();
+      if (!tok) {
+        result.reply = 'Não consegui conectar ao Google agora (a chave de acesso pode ter expirado). Peça para eu reconectar o Gmail e a Agenda.';
+      } else {
+        let dados: string;
+        if (out.google.service === 'gmail') {
+          const g = await gmailSearch(tok, String(out.google.query || 'in:inbox'));
+          dados = `Busca no Gmail ("${out.google.query || 'in:inbox'}"): cerca de ${g.total} resultado(s). Mostrando ${g.items.length}:\n` +
+            g.items.map((m, i) => `${i + 1}. ${m.unread ? '[NÃO LIDO] ' : ''}De: ${m.from} | Assunto: ${m.subject} | ${m.date}\n   ${m.snippet}`).join('\n');
+        } else {
+          const ev = await calendarEvents(tok, 7);
+          dados = ev.length ? `Próximos eventos (7 dias):\n` + ev.map((e, i) => `${i + 1}. ${e.title} | ${e.start}${e.where ? ' | ' + e.where : ''}`).join('\n') : 'Nenhum evento nos próximos 7 dias.';
+        }
+        const resumo = await generate({
+          system: 'Você é o Aura. Responda em português do Brasil, curto e útil, SOMENTE com base nos dados abaixo (não invente nada). Destaque o que é urgente ou exige ação. Não repita todos os campos.',
+          contents: [{ role: 'user', parts: [{ text: `Pergunta do usuário: ${message}\n\n${dados}` }] }]
+        });
+        result.reply = resumo.trim() || 'Pronto, consultei o Google, mas não encontrei nada relevante.';
+        result.google = { service: out.google.service };
+      }
+    } catch (e) {
+      console.warn('google:', e);
+      result.reply = `Não consegui ler o ${out.google.service === 'gmail' ? 'Gmail' : 'Google Agenda'}: ${e instanceof Error ? e.message : 'erro desconhecido'}.`;
+    }
+    out.handoff = undefined; // leitura já foi atendida pela API
+  }
   if (out.handoff?.url) {
     result.handoff = {
       url: String(out.handoff.url).slice(0, 300),
